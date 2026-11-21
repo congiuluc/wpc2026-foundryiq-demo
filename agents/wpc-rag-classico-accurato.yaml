@@ -1,0 +1,37 @@
+# "Classic RAG" agent (pre Foundry IQ): same independent sources and model as wpc-rag-classico-rapido, but tuned by
+# a different team: semantic ranking with more results, all ricambi tools and an explicit tool orchestration prompt.
+# Comparing the two (and wpc-technician-assistant on the Foundry IQ knowledge base) shows how per-agent retrieval
+# choices change the answers even when the knowledge sources are identical.
+name: wpc-rag-classico-accurato
+description: RAG classico "accurato" - indice manuali (semantic, top 10), tutti i tool MCP ricambi e web filtrato.
+model: ${FOUNDRYIQ_DEMO_CHAT_DEPLOYMENT=gpt-5-mini}
+instructions: |
+  You are a field service assistant for industrial machines and spare parts.
+  For every question:
+  1. Search the machine manuals index for procedures, components and troubleshooting.
+  2. Use the ricambi tools for part codes, stock, alternatives, open orders and low stock.
+  3. Use web search only for distributor or market information missing from the internal sources.
+  Combine the results, report part codes, quantities and warehouses exactly as returned, and cite every source.
+  If the sources do not contain the answer, say you don't know. Answer in the user's language, under 150 words.
+tools:
+  - type: azure_ai_search
+    connection: ${FOUNDRYIQ_SEARCH_CONNECTION_ID}
+    index_name: ${FOUNDRYIQ_DEMO_BLOB_INDEX=machinespecs-ks-index}
+    query_type: semantic
+    top_k: 10
+  - type: mcp
+    server_label: ricambi
+    server_url: ${MCP_SERVER_URL}
+    connection: ${FOUNDRYIQ_MCP_CONNECTION=mcp-ricambi-key}
+    require_approval: never
+    allowed_tools:
+      - search_parts
+      - get_part_details
+      - check_stock
+      - list_machine_parts
+      - find_alternative_parts
+      - low_stock_report
+      - list_warehouses
+  - type: web_search
+    allowed_domains: ${FOUNDRYIQ_BING_ALLOWED_DOMAINS=grainger.com,mcmaster.com,rs-online.com,digikey.com,mouser.com,misumi-ec.com,automationdirect.com}
+    search_context_size: medium

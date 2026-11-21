@@ -1,0 +1,24 @@
+# Prompt agent that calls the ricambi MCP server directly (no Foundry IQ): useful to compare
+# direct tool calling with knowledge base retrieval. The API key lives in the Foundry connection.
+name: wpc-magazzino-assistant
+description: Assistente di magazzino che interroga direttamente il server MCP ricambi.
+model: ${FOUNDRYIQ_DEMO_CHAT_DEPLOYMENT=gpt-5-mini}
+instructions: |
+  You are a warehouse assistant for spare parts.
+  Use the ricambi tools to search parts, check stock across warehouses, find alternatives and report low stock.
+  Always report part codes, quantities and warehouse names exactly as returned by the tools.
+  Answer in the user's language, concisely.
+tools:
+  - type: mcp
+    server_label: ricambi
+    server_url: ${MCP_SERVER_URL}
+    connection: ${FOUNDRYIQ_MCP_CONNECTION=mcp-ricambi-key}
+    require_approval: never
+    allowed_tools:
+      - search_parts
+      - get_part_details
+      - check_stock
+      - list_machine_parts
+      - find_alternative_parts
+      - low_stock_report
+      - list_warehouses

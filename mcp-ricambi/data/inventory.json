@@ -1,0 +1,2602 @@
+{
+  "warehouses": [
+    {
+      "code": "WH-MAIN",
+      "name": "Central Warehouse",
+      "site": "Main plant",
+      "type": "central"
+    },
+    {
+      "code": "WH-LINE-A",
+      "name": "Line A Satellite Store",
+      "site": "Production line A",
+      "type": "line-side"
+    },
+    {
+      "code": "WH-LINE-B",
+      "name": "Line B Satellite Store",
+      "site": "Production line B",
+      "type": "line-side"
+    },
+    {
+      "code": "VAN-SVC-01",
+      "name": "Field Service Van 01",
+      "site": "Mobile",
+      "type": "service-van"
+    }
+  ],
+  "parts": [
+    {
+      "part_number": "RX1-SEH-001",
+      "name": "Sensor Embedment Head",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "print-head",
+      "standard": "IPC-2221",
+      "description": "Sensor Embedment Head for Rx1 Digital Weave Integration Station. Compliant with IPC-2221.",
+      "maintenance_note": "Clean weekly with isopropyl alcohol; check calibration if sensors are misaligned.",
+      "unit_cost_eur": 1295.53,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 44,
+      "reorder_point": 1,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B04-2",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E02-5",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "RX1-FLC-002",
+      "name": "Fluid Line Connector",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "fluidics",
+      "standard": "ISO 80369-7",
+      "description": "Fluid Line Connector for Rx1 Digital Weave Integration Station. Compliant with ISO 80369-7.",
+      "maintenance_note": "Inspect for leaks bi-weekly.",
+      "unit_cost_eur": 182.68,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 33,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C01-2",
+          "on_hand": 3,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B06-1",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E05-1",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-9785",
+          "quantity": 8,
+          "eta": "2026-12-04",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "RX1-WTM-003",
+      "name": "Weave Tension Motor",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "motor",
+      "standard": null,
+      "description": "Weave Tension Motor for Rx1 Digital Weave Integration Station.",
+      "maintenance_note": "Calibrate monthly.",
+      "unit_cost_eur": 878.42,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 34,
+      "reorder_point": 2,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B05-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C04-3",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-3803",
+          "quantity": 4,
+          "eta": "2026-12-18",
+          "status": "awaiting confirmation"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "RX1-AR-004",
+      "name": "Alignment Roller",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "roller",
+      "standard": null,
+      "description": "Alignment Roller for Rx1 Digital Weave Integration Station.",
+      "maintenance_note": "Replace worn weave rollers as needed; check on fabric jams.",
+      "unit_cost_eur": 340.71,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 26,
+      "reorder_point": 3,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B11-3",
+          "on_hand": 5,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D05-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C04-4",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "RX1-CPI-005",
+      "name": "Control Panel Interface",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "control",
+      "standard": "IEC 60204-1",
+      "description": "Control Panel Interface for Rx1 Digital Weave Integration Station. Compliant with IEC 60204-1.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2368.49,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 43,
+      "reorder_point": 2,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E05-5",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B03-5",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B11-2",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-2040",
+          "quantity": 4,
+          "eta": "2026-12-13",
+          "status": "shipped"
+        }
+      ],
+      "alternates": [
+        {
+          "part_number": "VS12-CPI05",
+          "note": "Same HMI hardware family; requires firmware profile reload after swap."
+        }
+      ]
+    },
+    {
+      "part_number": "RX1-SIS-006",
+      "name": "Safety Interlock Switch",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "safety",
+      "standard": "ISO 14119",
+      "description": "Safety Interlock Switch for Rx1 Digital Weave Integration Station. Compliant with ISO 14119.",
+      "maintenance_note": null,
+      "unit_cost_eur": 99.74,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 3,
+      "reorder_point": 10,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A11-1",
+          "on_hand": 17,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C02-3",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-F12-3",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-A11-3",
+          "on_hand": 1,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": [
+        {
+          "part_number": "CGC-008",
+          "note": "Interchangeable; verify mounting and wiring before substitution."
+        }
+      ]
+    },
+    {
+      "part_number": "RX1-NSC-007",
+      "name": "Nano Sensor Cartridge",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "consumable",
+      "standard": null,
+      "description": "Nano Sensor Cartridge for Rx1 Digital Weave Integration Station.",
+      "maintenance_note": null,
+      "unit_cost_eur": 134.04,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 10,
+      "reorder_point": 15,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A06-3",
+          "on_hand": 10,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A02-4",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D09-2",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-E12-2",
+          "on_hand": 6,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "RX1-FFT-008",
+      "name": "Fabric Feed Tray",
+      "machine": "Rx1 Digital Weave Integration Station",
+      "category": "feed",
+      "standard": null,
+      "description": "Fabric Feed Tray for Rx1 Digital Weave Integration Station.",
+      "maintenance_note": null,
+      "unit_cost_eur": 258.04,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 23,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A06-1",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B01-1",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-6413",
+          "quantity": 8,
+          "eta": "2026-12-03",
+          "status": "awaiting confirmation"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-PHA-001",
+      "name": "Print Head Array",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "print-head",
+      "standard": "ISO 12647-2",
+      "description": "Print Head Array for OQTR Digital Printing and Lacing Stand. Compliant with ISO 12647-2.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2421.49,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 25,
+      "reorder_point": 2,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B08-4",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-F01-1",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-FCR-002",
+      "name": "Feed Collation Roller",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "roller",
+      "standard": null,
+      "description": "Feed Collation Roller for OQTR Digital Printing and Lacing Stand.",
+      "maintenance_note": "Inspect roller tension on feed jams.",
+      "unit_cost_eur": 277.73,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 13,
+      "reorder_point": 2,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B07-2",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A08-5",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A02-2",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-LA-003",
+      "name": "Lacing Actuator",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "actuator",
+      "standard": "IEC 61010-1",
+      "description": "Lacing Actuator for OQTR Digital Printing and Lacing Stand. Compliant with IEC 61010-1.",
+      "maintenance_note": "Inspect monthly.",
+      "unit_cost_eur": 1726.77,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 43,
+      "reorder_point": 2,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D05-4",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F09-4",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E12-5",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-6138",
+          "quantity": 4,
+          "eta": "2026-12-02",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-IC-004",
+      "name": "Ink Cartridge",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "consumable",
+      "standard": null,
+      "description": "Ink Cartridge for OQTR Digital Printing and Lacing Stand.",
+      "maintenance_note": "Replace weekly.",
+      "unit_cost_eur": 95.41,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 10,
+      "reorder_point": 8,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A03-1",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E10-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-E06-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-6147",
+          "quantity": 16,
+          "eta": "2026-12-08",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-CIP-005",
+      "name": "Control Interface Panel",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "control",
+      "standard": null,
+      "description": "Control Interface Panel for OQTR Digital Printing and Lacing Stand.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1926.92,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 29,
+      "reorder_point": 3,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A08-5",
+          "on_hand": 6,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C02-2",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-FAS-006",
+      "name": "Fabric Alignment Sensor",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "sensor",
+      "standard": "ISO 9283",
+      "description": "Fabric Alignment Sensor for OQTR Digital Printing and Lacing Stand. Compliant with ISO 9283.",
+      "maintenance_note": null,
+      "unit_cost_eur": 184.33,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 26,
+      "reorder_point": 1,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C11-1",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C10-2",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-E08-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-7939",
+          "quantity": 2,
+          "eta": "2026-12-09",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-TSA-007",
+      "name": "Tension Spring Assembly",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "mechanical",
+      "standard": null,
+      "description": "Tension Spring Assembly for OQTR Digital Printing and Lacing Stand.",
+      "maintenance_note": null,
+      "unit_cost_eur": 565.21,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 32,
+      "reorder_point": 2,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D09-1",
+          "on_hand": 3,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B09-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D03-1",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "OQTR-SGF-008",
+      "name": "Safety Guard Frame",
+      "machine": "OQTR Digital Printing and Lacing Stand",
+      "category": "safety",
+      "standard": "ISO 14120",
+      "description": "Safety Guard Frame for OQTR Digital Printing and Lacing Stand. Compliant with ISO 14120.",
+      "maintenance_note": null,
+      "unit_cost_eur": 150.91,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 6,
+      "reorder_point": 9,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C09-4",
+          "on_hand": 7,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B03-2",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D11-2",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-A07-1",
+          "on_hand": 1,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-4644",
+          "quantity": 18,
+          "eta": "2026-12-07",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-001",
+      "name": "Sensor Emulsion Injector",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "nozzle",
+      "standard": "ISO 14644-1",
+      "description": "Sensor Emulsion Injector for Delta Systems Robotic Nano Sensor Emulsion Environment. Compliant with ISO 14644-1.",
+      "maintenance_note": "Clean daily.",
+      "unit_cost_eur": 477.3,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 4,
+      "reorder_point": 6,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C05-1",
+          "on_hand": 10,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D11-5",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B10-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-002",
+      "name": "Environmental Control Chamber",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "thermal",
+      "standard": "IEC 61010-1",
+      "description": "Environmental Control Chamber for Delta Systems Robotic Nano Sensor Emulsion Environment. Compliant with IEC 61010-1.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1983.89,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 35,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F07-1",
+          "on_hand": 3,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F12-2",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C10-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-5920",
+          "quantity": 8,
+          "eta": "2026-12-17",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-003",
+      "name": "Robotic Placement Arm",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "robotics",
+      "standard": null,
+      "description": "Robotic Placement Arm for Delta Systems Robotic Nano Sensor Emulsion Environment.",
+      "maintenance_note": "Inspect robotic joints daily.",
+      "unit_cost_eur": 5651.08,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 40,
+      "reorder_point": 3,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D11-4",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D09-1",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E10-3",
+          "on_hand": 1,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-004",
+      "name": "Emulsion Cartridge Holder",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "mechanical",
+      "standard": null,
+      "description": "Emulsion Cartridge Holder for Delta Systems Robotic Nano Sensor Emulsion Environment.",
+      "maintenance_note": null,
+      "unit_cost_eur": 316.82,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 22,
+      "reorder_point": 2,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F11-5",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F05-2",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-8784",
+          "quantity": 4,
+          "eta": "2026-12-20",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-005",
+      "name": "UV Curing Module",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "thermal",
+      "standard": "IEC 62471",
+      "description": "UV Curing Module for Delta Systems Robotic Nano Sensor Emulsion Environment. Compliant with IEC 62471.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2770.34,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 30,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B11-1",
+          "on_hand": 7,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F09-4",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A08-2",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-006",
+      "name": "Sensor Alignment Camera",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "sensor",
+      "standard": null,
+      "description": "Sensor Alignment Camera for Delta Systems Robotic Nano Sensor Emulsion Environment.",
+      "maintenance_note": null,
+      "unit_cost_eur": 348.82,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 34,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E08-2",
+          "on_hand": 8,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B11-3",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C08-1",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-007",
+      "name": "HEPA Filter Membrane",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "filter",
+      "standard": "ISO 29463",
+      "description": "HEPA Filter Membrane for Delta Systems Robotic Nano Sensor Emulsion Environment. Compliant with ISO 29463.",
+      "maintenance_note": "Replace monthly.",
+      "unit_cost_eur": 138.12,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 9,
+      "reorder_point": 17,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A07-4",
+          "on_hand": 9,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A04-4",
+          "on_hand": 8,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D08-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-D09-5",
+          "on_hand": 4,
+          "reserved": 2
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DSE-008",
+      "name": "Diagnostic Interface Panel",
+      "machine": "Delta Systems Robotic Nano Sensor Emulsion Environment",
+      "category": "control",
+      "standard": null,
+      "description": "Diagnostic Interface Panel for Delta Systems Robotic Nano Sensor Emulsion Environment.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1428.44,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 23,
+      "reorder_point": 4,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F11-4",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E09-1",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A02-4",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-8564",
+          "quantity": 8,
+          "eta": "2026-12-06",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-001",
+      "name": "Extrusion Nozzle",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "nozzle",
+      "standard": "ISO 14120",
+      "description": "Extrusion Nozzle for Electro-card Strand Extrusion and Coupling Printer. Compliant with ISO 14120.",
+      "maintenance_note": null,
+      "unit_cost_eur": 328.91,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 4,
+      "reorder_point": 13,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D05-4",
+          "on_hand": 10,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B11-1",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-1333",
+          "quantity": 26,
+          "eta": "2026-12-20",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-002",
+      "name": "Coupling Alignment Sensor",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "sensor",
+      "standard": "IEC 60068-2-27",
+      "description": "Coupling Alignment Sensor for Electro-card Strand Extrusion and Coupling Printer. Compliant with IEC 60068-2-27.",
+      "maintenance_note": null,
+      "unit_cost_eur": 912.5,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 12,
+      "reorder_point": 2,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C03-5",
+          "on_hand": 3,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B05-1",
+          "on_hand": 2,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D07-2",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-F04-1",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-003",
+      "name": "Heating Coil Assembly",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "thermal",
+      "standard": null,
+      "description": "Heating Coil Assembly for Electro-card Strand Extrusion and Coupling Printer.",
+      "maintenance_note": "Inspect weekly and replace worn components.",
+      "unit_cost_eur": 2603.06,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 39,
+      "reorder_point": 3,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C02-5",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A07-3",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B12-5",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-004",
+      "name": "Material Feed Hopper",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "feed",
+      "standard": null,
+      "description": "Material Feed Hopper for Electro-card Strand Extrusion and Coupling Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 317.4,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 27,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B02-3",
+          "on_hand": 4,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F07-3",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B08-2",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-005",
+      "name": "Strand Cooling Tray",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "thermal",
+      "standard": null,
+      "description": "Strand Cooling Tray for Electro-card Strand Extrusion and Coupling Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1100.2,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 33,
+      "reorder_point": 1,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A04-4",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F08-4",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-006",
+      "name": "Tension Control Motor",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "motor",
+      "standard": null,
+      "description": "Tension Control Motor for Electro-card Strand Extrusion and Coupling Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2114.04,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 22,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D12-5",
+          "on_hand": 8,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C05-3",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-007",
+      "name": "Conductivity Test Probe",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "sensor",
+      "standard": "IEC 61010-2-030",
+      "description": "Conductivity Test Probe for Electro-card Strand Extrusion and Coupling Printer. Compliant with IEC 61010-2-030.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1331.79,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 16,
+      "reorder_point": 2,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E09-5",
+          "on_hand": 3,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A12-5",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "ECS-008",
+      "name": "Alignment Calibration Module",
+      "machine": "Electro-card Strand Extrusion and Coupling Printer",
+      "category": "control",
+      "standard": null,
+      "description": "Alignment Calibration Module for Electro-card Strand Extrusion and Coupling Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2840.44,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 24,
+      "reorder_point": 1,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D08-3",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A02-4",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B03-5",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-5066",
+          "quantity": 2,
+          "eta": "2026-12-04",
+          "status": "awaiting confirmation"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-LM-001",
+      "name": "Laser Etching Module",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "laser",
+      "standard": "IEC 60825-1",
+      "description": "Laser Etching Module for Delta Systems Robotic Nano Circuit Board 3D Printer. Compliant with IEC 60825-1.",
+      "maintenance_note": "Inspect lens and power settings on laser drift.",
+      "unit_cost_eur": 3972.91,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 36,
+      "reorder_point": 4,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C10-4",
+          "on_hand": 7,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E12-1",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-F02-2",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-NFE-002",
+      "name": "Nano Filament Extruder",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "nozzle",
+      "standard": "ISO 17842-1",
+      "description": "Nano Filament Extruder for Delta Systems Robotic Nano Circuit Board 3D Printer. Compliant with ISO 17842-1.",
+      "maintenance_note": "Replace extruder nozzle monthly.",
+      "unit_cost_eur": 380.71,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 7,
+      "reorder_point": 13,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C01-2",
+          "on_hand": 22,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D02-2",
+          "on_hand": 5,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E11-2",
+          "on_hand": 6,
+          "reserved": 1
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-C03-1",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-RAJ-003",
+      "name": "Robotic Arm Joint",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "robotics",
+      "standard": null,
+      "description": "Robotic Arm Joint for Delta Systems Robotic Nano Circuit Board 3D Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 5643.5,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 11,
+      "reorder_point": 4,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C12-4",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D02-5",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E05-1",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-PBH-004",
+      "name": "Print Bed Heater",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "thermal",
+      "standard": null,
+      "description": "Print Bed Heater for Delta Systems Robotic Nano Circuit Board 3D Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1563.9,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 45,
+      "reorder_point": 3,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B08-5",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E07-4",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C06-1",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-6403",
+          "quantity": 6,
+          "eta": "2026-12-14",
+          "status": "awaiting confirmation"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-CSM-005",
+      "name": "Control Software Module",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "control",
+      "standard": null,
+      "description": "Control Software Module for Delta Systems Robotic Nano Circuit Board 3D Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2237.81,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 38,
+      "reorder_point": 1,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C06-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A11-5",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E08-4",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-FFM-006",
+      "name": "Filament Feed Motor",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "motor",
+      "standard": null,
+      "description": "Filament Feed Motor for Delta Systems Robotic Nano Circuit Board 3D Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 960.76,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 36,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F10-2",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E07-1",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-3522",
+          "quantity": 8,
+          "eta": "2026-12-16",
+          "status": "awaiting confirmation"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-SIR-007",
+      "name": "Safety Interlock Relay",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "safety",
+      "standard": "ISO 13849-1",
+      "description": "Safety Interlock Relay for Delta Systems Robotic Nano Circuit Board 3D Printer. Compliant with ISO 13849-1.",
+      "maintenance_note": null,
+      "unit_cost_eur": 319.71,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 5,
+      "reorder_point": 19,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B08-5",
+          "on_hand": 30,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E09-2",
+          "on_hand": 6,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D06-5",
+          "on_hand": 4,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "DS-SCA-008",
+      "name": "Substrate Clamp Assembly",
+      "machine": "Delta Systems Robotic Nano Circuit Board 3D Printer",
+      "category": "mechanical",
+      "standard": null,
+      "description": "Substrate Clamp Assembly for Delta Systems Robotic Nano Circuit Board 3D Printer.",
+      "maintenance_note": null,
+      "unit_cost_eur": 501.93,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 19,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C09-5",
+          "on_hand": 8,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B12-2",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D01-3",
+          "on_hand": 1,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-001",
+      "name": "Cutting Blade Assembly",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "blade",
+      "standard": "ISO 11148-1",
+      "description": "Cutting Blade Assembly for Contoso Robotic Garment Cut/Sew Assembly System. Compliant with ISO 11148-1.",
+      "maintenance_note": "Recalibrate cutting module and inspect mounts on blade misalignment.",
+      "unit_cost_eur": 725.67,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 31,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E06-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-F03-1",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-5342",
+          "quantity": 8,
+          "eta": "2026-12-11",
+          "status": "awaiting confirmation"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-002",
+      "name": "Sewing Actuator",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "actuator",
+      "standard": "IEC 60204-1",
+      "description": "Sewing Actuator for Contoso Robotic Garment Cut/Sew Assembly System. Compliant with IEC 60204-1.",
+      "maintenance_note": "Lubricate weekly.",
+      "unit_cost_eur": 2171.9,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 32,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D09-1",
+          "on_hand": 5,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C04-1",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A08-2",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-1474",
+          "quantity": 8,
+          "eta": "2026-12-02",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-003",
+      "name": "Garment Feed Tray",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "feed",
+      "standard": null,
+      "description": "Garment Feed Tray for Contoso Robotic Garment Cut/Sew Assembly System.",
+      "maintenance_note": "Inspect weekly.",
+      "unit_cost_eur": 125.45,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 28,
+      "reorder_point": 3,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E07-5",
+          "on_hand": 3,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D10-2",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D11-3",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-004",
+      "name": "Pattern Control Interface",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "control",
+      "standard": null,
+      "description": "Pattern Control Interface for Contoso Robotic Garment Cut/Sew Assembly System.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2284.6,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 41,
+      "reorder_point": 2,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C10-3",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C04-4",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E05-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-7484",
+          "quantity": 4,
+          "eta": "2026-12-09",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-005",
+      "name": "Thread Tension Regulator",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "mechanical",
+      "standard": null,
+      "description": "Thread Tension Regulator for Contoso Robotic Garment Cut/Sew Assembly System.",
+      "maintenance_note": null,
+      "unit_cost_eur": 148.33,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 30,
+      "reorder_point": 3,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E06-2",
+          "on_hand": 6,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F11-2",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C08-1",
+          "on_hand": 2,
+          "reserved": 2
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-006",
+      "name": "Blade Alignment Sensor",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "sensor",
+      "standard": "IEC 61000-6-2",
+      "description": "Blade Alignment Sensor for Contoso Robotic Garment Cut/Sew Assembly System. Compliant with IEC 61000-6-2.",
+      "maintenance_note": null,
+      "unit_cost_eur": 834.62,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 33,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E06-5",
+          "on_hand": 2,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C08-3",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-D09-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-7464",
+          "quantity": 8,
+          "eta": "2026-12-01",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-007",
+      "name": "Stitch Calibration Module",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "control",
+      "standard": null,
+      "description": "Stitch Calibration Module for Contoso Robotic Garment Cut/Sew Assembly System.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1025.14,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 44,
+      "reorder_point": 3,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F06-1",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E06-5",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-F05-4",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-1609",
+          "quantity": 6,
+          "eta": "2026-12-10",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "CGC-008",
+      "name": "Safety Interlock Switch",
+      "machine": "Contoso Robotic Garment Cut/Sew Assembly System",
+      "category": "safety",
+      "standard": "ISO 14119",
+      "description": "Safety Interlock Switch for Contoso Robotic Garment Cut/Sew Assembly System. Compliant with ISO 14119.",
+      "maintenance_note": null,
+      "unit_cost_eur": 314.24,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 3,
+      "reorder_point": 8,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F12-5",
+          "on_hand": 12,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B07-1",
+          "on_hand": 4,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C01-3",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-B06-1",
+          "on_hand": 3,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": [
+        {
+          "part_number": "RX1-SIS-006",
+          "note": "Interchangeable; verify mounting and wiring before substitution."
+        }
+      ]
+    },
+    {
+      "part_number": "GRT-001",
+      "name": "Vapor Condensation Coil",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "thermal",
+      "standard": "ISO 5149-1",
+      "description": "Vapor Condensation Coil for Graphene Vapor Reclaim Tank. Compliant with ISO 5149-1.",
+      "maintenance_note": "Inspect coil integrity daily.",
+      "unit_cost_eur": 1707.81,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 23,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A08-1",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A01-3",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-002",
+      "name": "Graphene Filter Membrane",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "filter",
+      "standard": "ISO 16890",
+      "description": "Graphene Filter Membrane for Graphene Vapor Reclaim Tank. Compliant with ISO 16890.",
+      "maintenance_note": "Replace weekly (max interval 30 days); replace on filter clogging.",
+      "unit_cost_eur": 179.31,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 10,
+      "reorder_point": 19,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B10-1",
+          "on_hand": 14,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E05-2",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-A03-3",
+          "on_hand": 3,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-7897",
+          "quantity": 38,
+          "eta": "2026-12-17",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-003",
+      "name": "Pressure Regulation Valve",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "fluidics",
+      "standard": null,
+      "description": "Pressure Regulation Valve for Graphene Vapor Reclaim Tank.",
+      "maintenance_note": "Check daily; inspect seals on pressure spikes.",
+      "unit_cost_eur": 771.08,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 14,
+      "reorder_point": 3,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D09-2",
+          "on_hand": 4,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F09-3",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A08-4",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-004",
+      "name": "Intake Port Assembly",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "fluidics",
+      "standard": null,
+      "description": "Intake Port Assembly for Graphene Vapor Reclaim Tank.",
+      "maintenance_note": "Clean weekly.",
+      "unit_cost_eur": 233.61,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 23,
+      "reorder_point": 1,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A03-3",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F06-4",
+          "on_hand": 2,
+          "reserved": 2
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E10-4",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-005",
+      "name": "Storage Vessel",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "fluidics",
+      "standard": null,
+      "description": "Storage Vessel for Graphene Vapor Reclaim Tank.",
+      "maintenance_note": null,
+      "unit_cost_eur": 203.32,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 33,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-D06-4",
+          "on_hand": 7,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C07-3",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-F08-1",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-006",
+      "name": "Reclaim Efficiency Sensor",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "sensor",
+      "standard": "IEC 61000-4-2",
+      "description": "Reclaim Efficiency Sensor for Graphene Vapor Reclaim Tank. Compliant with IEC 61000-4-2.",
+      "maintenance_note": null,
+      "unit_cost_eur": 880.4,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 45,
+      "reorder_point": 2,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E09-3",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F07-1",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A10-5",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-7022",
+          "quantity": 4,
+          "eta": "2026-12-04",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-007",
+      "name": "Grounding Terminal",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "electrical",
+      "standard": null,
+      "description": "Grounding Terminal for Graphene Vapor Reclaim Tank.",
+      "maintenance_note": null,
+      "unit_cost_eur": 159.2,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 29,
+      "reorder_point": 1,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F05-1",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-C06-3",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D02-2",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "GRT-008",
+      "name": "Coil Temperature Controller",
+      "machine": "Graphene Vapor Reclaim Tank",
+      "category": "control",
+      "standard": null,
+      "description": "Coil Temperature Controller for Graphene Vapor Reclaim Tank.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2813.84,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 32,
+      "reorder_point": 3,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E02-1",
+          "on_hand": 6,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D10-4",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-RL01",
+      "name": "Sheet Feed Roller",
+      "machine": "Ven Systems Model 12",
+      "category": "roller",
+      "standard": "ISO 11148-3",
+      "description": "Sheet Feed Roller for Ven Systems Model 12. Compliant with ISO 11148-3.",
+      "maintenance_note": "Inspect for wear weekly.",
+      "unit_cost_eur": 381.34,
+      "supplier": "Fabrikam Components",
+      "lead_time_days": 18,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F10-4",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B07-5",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B05-3",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-2965",
+          "quantity": 8,
+          "eta": "2026-12-01",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-TC02",
+      "name": "Temperature Control Unit",
+      "machine": "Ven Systems Model 12",
+      "category": "thermal",
+      "standard": null,
+      "description": "Temperature Control Unit for Ven Systems Model 12.",
+      "maintenance_note": "Inspect on system overheating.",
+      "unit_cost_eur": 2313.24,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 39,
+      "reorder_point": 4,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-E09-3",
+          "on_hand": 8,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-A07-1",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E07-4",
+          "on_hand": 0,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-1341",
+          "quantity": 8,
+          "eta": "2026-12-11",
+          "status": "confirmed"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-EN03",
+      "name": "Liquid Emulsion Nozzle",
+      "machine": "Ven Systems Model 12",
+      "category": "nozzle",
+      "standard": "IEC 61010-2-020",
+      "description": "Liquid Emulsion Nozzle for Ven Systems Model 12. Compliant with IEC 61010-2-020.",
+      "maintenance_note": "Clean daily; check alignment on uneven coating.",
+      "unit_cost_eur": 297.95,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 5,
+      "reorder_point": 19,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A04-4",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D05-3",
+          "on_hand": 6,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A09-1",
+          "on_hand": 5,
+          "reserved": 2
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-C06-2",
+          "on_hand": 8,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-2684",
+          "quantity": 38,
+          "eta": "2026-12-05",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-FS04",
+      "name": "Flow Rate Sensor",
+      "machine": "Ven Systems Model 12",
+      "category": "sensor",
+      "standard": null,
+      "description": "Flow Rate Sensor for Ven Systems Model 12.",
+      "maintenance_note": "Calibrate temperature sensors monthly.",
+      "unit_cost_eur": 558.7,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 12,
+      "reorder_point": 1,
+      "criticality": "medium",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F08-4",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E11-5",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-D02-4",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-C10-1",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-CPI05",
+      "name": "Control Panel Interface",
+      "machine": "Ven Systems Model 12",
+      "category": "control",
+      "standard": "UL 508",
+      "description": "Control Panel Interface for Ven Systems Model 12. Compliant with UL 508.",
+      "maintenance_note": null,
+      "unit_cost_eur": 2103.83,
+      "supplier": "Zava Industrial Supply",
+      "lead_time_days": 38,
+      "reorder_point": 1,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A11-1",
+          "on_hand": 1,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-D10-5",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-E11-2",
+          "on_hand": 1,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": [
+        {
+          "part_number": "RX1-CPI-005",
+          "note": "Same HMI hardware family; requires firmware profile reload after swap."
+        }
+      ]
+    },
+    {
+      "part_number": "VS12-PS06",
+      "name": "Power Supply Module",
+      "machine": "Ven Systems Model 12",
+      "category": "electrical",
+      "standard": null,
+      "description": "Power Supply Module for Ven Systems Model 12.",
+      "maintenance_note": null,
+      "unit_cost_eur": 231.92,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 28,
+      "reorder_point": 1,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-A09-2",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-E09-5",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-C07-4",
+          "on_hand": 1,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-F11-3",
+          "on_hand": 2,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-SIS07",
+      "name": "Safety Interlock Switch",
+      "machine": "Ven Systems Model 12",
+      "category": "safety",
+      "standard": "ANSI B11.19",
+      "description": "Safety Interlock Switch for Ven Systems Model 12. Compliant with ANSI B11.19.",
+      "maintenance_note": null,
+      "unit_cost_eur": 170.09,
+      "supplier": "Northwind Precision Parts",
+      "lead_time_days": 3,
+      "reorder_point": 10,
+      "criticality": "high",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C02-5",
+          "on_hand": 19,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F12-4",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A05-5",
+          "on_hand": 4,
+          "reserved": 1
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-B11-5",
+          "on_hand": 5,
+          "reserved": 0
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    },
+    {
+      "part_number": "VS12-RT08",
+      "name": "Emulsion Reservoir Tank",
+      "machine": "Ven Systems Model 12",
+      "category": "fluidics",
+      "standard": null,
+      "description": "Emulsion Reservoir Tank for Ven Systems Model 12.",
+      "maintenance_note": null,
+      "unit_cost_eur": 1323.24,
+      "supplier": "Tailspin Sensors",
+      "lead_time_days": 18,
+      "reorder_point": 3,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-B06-4",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-A09-5",
+          "on_hand": 1,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-1618",
+          "quantity": 6,
+          "eta": "2026-12-22",
+          "status": "shipped"
+        }
+      ],
+      "alternates": []
+    },
+    {
+      "part_number": "AD-60W-24",
+      "name": "Power Adapter 24V 2.5A 60W",
+      "machine": "Edge Control Node P4311/P4324",
+      "category": "electrical",
+      "standard": null,
+      "description": "Power Adapter 24V 2.5A 60W for Edge Control Node P4311/P4324.",
+      "maintenance_note": "Replacement must provide >= 2.5 A continuous at 24 V, barrel 5.5/2.1 mm center-positive.",
+      "unit_cost_eur": 213.47,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 20,
+      "reorder_point": 4,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-F10-2",
+          "on_hand": 2,
+          "reserved": 1
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-B08-5",
+          "on_hand": 0,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-B",
+          "bin": "B-B09-2",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-B06-5",
+          "on_hand": 1,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [
+        {
+          "po": "PO-2026-8564",
+          "quantity": 8,
+          "eta": "2026-12-10",
+          "status": "shipped"
+        }
+      ],
+      "alternates": [
+        {
+          "part_number": "AD-90W-24",
+          "note": "Higher-rated adapter usable as substitute (same 24 V, center-positive)."
+        }
+      ]
+    },
+    {
+      "part_number": "AD-90W-24",
+      "name": "Power Adapter 24V 3.75A 90W",
+      "machine": "Edge Control Node P4311/P4324",
+      "category": "electrical",
+      "standard": null,
+      "description": "Power Adapter 24V 3.75A 90W for Edge Control Node P4311/P4324.",
+      "maintenance_note": "Replacement must provide >= 3.75 A continuous at 24 V.",
+      "unit_cost_eur": 356.71,
+      "supplier": "Adventure Works Robotics",
+      "lead_time_days": 13,
+      "reorder_point": 2,
+      "criticality": "low",
+      "stock": [
+        {
+          "warehouse": "WH-MAIN",
+          "bin": "MAIN-C01-4",
+          "on_hand": 4,
+          "reserved": 0
+        },
+        {
+          "warehouse": "WH-LINE-A",
+          "bin": "A-F09-1",
+          "on_hand": 2,
+          "reserved": 0
+        },
+        {
+          "warehouse": "VAN-SVC-01",
+          "bin": "01-D02-2",
+          "on_hand": 2,
+          "reserved": 1
+        }
+      ],
+      "open_orders": [],
+      "alternates": []
+    }
+  ]
+}

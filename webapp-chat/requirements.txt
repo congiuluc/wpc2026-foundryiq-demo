@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn>=0.30
+requests>=2.32
+azure-identity>=1.19
+openai>=1.60
+
+azure-ai-projects>=2.11

@@ -1,0 +1,26 @@
+# "Classic RAG" agent (pre Foundry IQ): every source is wired directly into the agent as an independent tool,
+# with retrieval settings chosen by whoever builds the agent. Same sources and model as wpc-rag-classico-accurato,
+# but a different configuration: keyword search with few results, short prompt, no tool orchestration rules.
+name: wpc-rag-classico-rapido
+description: RAG classico "rapido" - indice manuali (keyword, top 3), MCP ricambi e web filtrato come tool indipendenti.
+model: ${FOUNDRYIQ_DEMO_CHAT_DEPLOYMENT=gpt-5-mini}
+instructions: |
+  You are a field service assistant for industrial machines and spare parts.
+  Answer quickly using the most relevant tool. Answer in the user's language, in at most 80 words.
+tools:
+  - type: azure_ai_search
+    connection: ${FOUNDRYIQ_SEARCH_CONNECTION_ID}
+    index_name: ${FOUNDRYIQ_DEMO_BLOB_INDEX=machinespecs-ks-index}
+    query_type: simple
+    top_k: 3
+  - type: mcp
+    server_label: ricambi
+    server_url: ${MCP_SERVER_URL}
+    connection: ${FOUNDRYIQ_MCP_CONNECTION=mcp-ricambi-key}
+    require_approval: never
+    allowed_tools:
+      - search_parts
+      - check_stock
+  - type: web_search
+    allowed_domains: ${FOUNDRYIQ_BING_ALLOWED_DOMAINS=grainger.com,mcmaster.com,rs-online.com,digikey.com,mouser.com,misumi-ec.com,automationdirect.com}
+    search_context_size: low

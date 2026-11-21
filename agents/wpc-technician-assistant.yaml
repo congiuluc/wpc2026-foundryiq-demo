@@ -1,0 +1,15 @@
+# Prompt agent grounded on the Foundry IQ knowledge base (manuals, spare parts MCP, SharePoint policies, filtered Bing).
+# Deployed by scripts/setup_foundry_agents.py (azd postdeploy). ${VAR} / ${VAR=default} come from azd env.
+name: wpc-technician-assistant
+description: Assistente per tecnici di manutenzione basato sulla knowledge base Foundry IQ.
+model: ${FOUNDRYIQ_DEMO_CHAT_DEPLOYMENT=gpt-5-mini}
+instructions: |
+  You are a field service assistant for industrial machines and spare parts.
+  Always use the knowledge base tool to answer: never rely on your own knowledge.
+  Cite every source as [message_idx:source_idx|source_name].
+  If the knowledge base does not contain the answer, say you don't know.
+  Answer in the user's language, concisely (under 120 words).
+tools:
+  - type: knowledge_base
+    server_url: ${FOUNDRYIQ_DEMO_KB_MCP_ENDPOINT}
+    connection: ${FOUNDRYIQ_DEMO_KB_CONNECTION=wpc-foundryiq-kb-mcp}

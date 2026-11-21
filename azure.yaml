@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: wpc-foundryiq-demo
+metadata:
+  template: wpc-foundryiq-demo
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  mcp-ricambi:
+    project: ./mcp-ricambi
+    language: python
+    host: appservice
+  webapp-chat:
+    project: ./webapp-chat
+    language: python
+    host: appservice
+hooks:
+  preprovision:
+    shell: pwsh
+    run: ./scripts/preprovision.ps1
+    continueOnError: false
+    interactive: true
+  postprovision:
+    shell: pwsh
+    run: ./scripts/postprovision.ps1
+    continueOnError: false
+    interactive: true
+  postdeploy:
+    shell: pwsh
+    run: ./scripts/postdeploy.ps1
+    continueOnError: false
+    interactive: true
