@@ -43,7 +43,7 @@ function Resolve-Group([string]$SettingName, [string]$DisplayName) {
     if (-not $id) {
         $nickname = ($DisplayName -replace '[^A-Za-z0-9]', '').ToLowerInvariant()
         $id = Invoke-Az "Creazione gruppo '$DisplayName'" @('ad', 'group', 'create', '--display-name', $DisplayName, '--mail-nickname', $nickname,
-            '--description', 'Gruppo della demo ACL Foundry IQ (wpc-foundryiq-demo).', '--query', 'id', '-o', 'tsv')
+            '--description', 'Gruppo della demo ACL Foundry IQ (wpc-foundry-iq-demo).', '--query', 'id', '-o', 'tsv')
         Write-Host "  creato gruppo '$DisplayName' ($id)"
     }
     else { Write-Host "  gruppo esistente '$DisplayName' ($id)" }

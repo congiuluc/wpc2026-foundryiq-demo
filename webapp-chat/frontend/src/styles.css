@@ -650,6 +650,22 @@ legend {
   box-shadow: var(--shadow-sm);
 }
 
+/* Live streaming timeline */
+.timeline > ol { list-style: none; margin: .5rem 0 0; padding: 0; max-height: 18rem; overflow-y: auto; font-size: .84rem; }
+.timeline-item { display: grid; grid-template-columns: 4.2rem 6.2rem 1fr; gap: .5rem; align-items: baseline; padding: .3rem .4rem; border-left: 3px solid var(--border); }
+.timeline-item + .timeline-item { margin-top: .15rem; }
+.timeline-item.level-warning { background: var(--warn-bg); border-left-color: var(--warn-border); }
+.timeline-item.level-error { border-left-color: var(--off); }
+.timeline-item.level-error strong { color: var(--off); }
+.timeline-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+.timeline-phase { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+.timeline-phase.phase-tool { color: var(--tool); }
+.timeline-phase.phase-generation { color: var(--accent-2); }
+.timeline-phase.phase-done { color: var(--ok); }
+.timeline-text { min-width: 0; }
+.timeline-detail { display: block; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 640px) { .timeline-item { grid-template-columns: 3.6rem 1fr; } .timeline-phase { display: none; } }
+
 /* Buttons */
 button, .file-button {
   font: inherit;
@@ -1382,6 +1398,13 @@ form #send { border-radius: .9rem; padding: .62rem 1.2rem; flex: none; }
 .role-tool .badge.role { background: var(--tool); color: #fff; }
 .part { margin: .65rem 0; }
 .part > div:first-child { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.trace-metadata .stats { margin: .5rem 0; }
+.trace-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin: .6rem 0; display: block; overflow-x: auto; }
+.trace-table caption { text-align: left; font-weight: 700; padding: .3rem 0; color: var(--text); }
+.trace-table th, .trace-table td { border-bottom: 1px solid var(--border); padding: .3rem .5rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.trace-table th { color: var(--muted); font-weight: 650; white-space: nowrap; }
+.trace-table tr.level-warning td { background: var(--warn-bg); }
+.trace-table tr.level-error td { color: var(--off); }
 details.source {
   border: 1px solid var(--border);
   border-radius: .8rem;

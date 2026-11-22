@@ -1,5 +1,5 @@
 // Exposes the demo configuration as a resource-group deployment with a stable name, so the notebook
-// can keep reading outputs with `az deployment group show --name wpc-foundryiq-demo`.
+// can keep reading outputs with `az deployment group show --name wpc-foundry-iq-demo`.
 
 param demoConfig object
 param foundryAccountName string

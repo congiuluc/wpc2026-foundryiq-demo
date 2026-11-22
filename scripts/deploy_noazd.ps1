@@ -85,16 +85,33 @@ function Invoke-Deploy {
     foreach ($name in 'AZURE_RESOURCE_GROUP', 'MCP_APP_NAME', 'CHAT_APP_NAME') {
         if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Variabile $name mancante: esegui prima la fase provision." }
     }
+    & (Join-Path $root 'webapp-chat/build_frontend.ps1')
     foreach ($svc in @(@{ Dir = 'mcp-ricambi'; App = $env:MCP_APP_NAME }, @{ Dir = 'webapp-chat'; App = $env:CHAT_APP_NAME })) {
         Write-Host "  pubblicazione $($svc.Dir) su $($svc.App) (build Oryx lato App Service)..."
         $zip = Join-Path ([IO.Path]::GetTempPath()) "$($svc.Dir)-$([guid]::NewGuid().ToString('N')).zip"
+        $stage = $null
         try {
-            Get-ChildItem (Join-Path $root $svc.Dir) -Force -Exclude '.venv', '__pycache__', '.pytest_cache', 'tests', '.env' |
-                Compress-Archive -DestinationPath $zip -Force
+            if ($svc.Dir -eq 'webapp-chat') {
+                $stage = Join-Path ([IO.Path]::GetTempPath()) "wpc-chat-$([guid]::NewGuid().ToString('N'))"
+                New-Item -ItemType Directory -Path $stage | Out-Null
+                Copy-Item (Join-Path $root 'webapp-chat/app.py'), (Join-Path $root 'webapp-chat/requirements.txt') -Destination $stage
+                New-Item -ItemType Directory -Path (Join-Path $stage 'frontend') | Out-Null
+                Copy-Item (Join-Path $root 'webapp-chat/frontend/dist') -Destination (Join-Path $stage 'frontend') -Recurse
+                Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+            }
+            else {
+                Get-ChildItem (Join-Path $root $svc.Dir) -Force -Exclude '.venv', '__pycache__', '.pytest_cache', 'tests', '.env' |
+                    Compress-Archive -DestinationPath $zip -Force
+            }
             az webapp deploy -g $env:AZURE_RESOURCE_GROUP -n $svc.App --src-path $zip --type zip --only-show-errors -o none
             if ($LASTEXITCODE -ne 0) { throw "az webapp deploy di $($svc.Dir) fallito (exit code $LASTEXITCODE)" }
         }
-        finally { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
+        finally {
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            if ($svc.Dir -eq 'webapp-chat' -and $stage -and (Test-Path -LiteralPath $stage)) {
+                Remove-Item -LiteralPath $stage -Recurse -Force
+            }
+        }
     }
 }
 

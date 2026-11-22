@@ -3,6 +3,7 @@
 #  - machinespecs-ks       : azureBlob knowledge source on the machinespecs container (machine manuals)
 #  - ricambi-magazzino-ks  : mcpServer knowledge source on the MCP server deployed to App Service
 #  - policies-sharepoint-ks: remoteSharePoint knowledge source on the policies folder (only if setup_sharepoint.ps1 ran)
+#  - policies-sharepoint-indexed-ks: indexedSharePoint source with document ACLs (if an ingestion connection is configured)
 #  - bing-filtered-ks      : web knowledge source restricted to configured distributor domains
 #  - wpc-foundryiq-kb      : knowledge base combining the sources
 #  - acl-docs-ks / wpc-acl-kb: ADLS Gen2 source with document-level ACLs and its demo KB (if setup_acl_demo.ps1 ran)
@@ -15,6 +16,7 @@ param(
     [string]$BlobKnowledgeSourceName = 'machinespecs-ks',
     [string]$McpKnowledgeSourceName = 'ricambi-magazzino-ks',
     [string]$SharePointKnowledgeSourceName = 'policies-sharepoint-ks',
+    [string]$IndexedSharePointKnowledgeSourceName = 'policies-sharepoint-indexed-ks',
     [string]$BingKnowledgeSourceName = 'bing-filtered-ks',
     [string]$AclKnowledgeSourceName = 'acl-docs-ks',
     [string]$AclKnowledgeBaseName = 'wpc-acl-kb',
@@ -65,7 +67,7 @@ function Invoke-ArmPut([string]$Url, [hashtable]$Body) {
 
 function Invoke-SearchPut([string]$Path, [hashtable]$Body) {
     $url = "$searchEndpoint/$Path`?api-version=$ApiVersion"
-    # The body can contain the MCP API key: keep it in a temp file outside the repo and delete it afterwards.
+    # The body can contain MCP or SharePoint credentials: keep it outside the repo and delete it afterwards.
     $tmp = Join-Path ([IO.Path]::GetTempPath()) "foundryiq-$([guid]::NewGuid().ToString('N')).local.json"
     try {
         $Body | ConvertTo-Json -Depth 20 | Set-Content -Path $tmp -Encoding utf8NoBOM
@@ -86,6 +88,14 @@ $chatModel = @{
         modelName    = Get-Setting 'FOUNDRYIQ_DEMO_CHAT_MODEL' 'gpt-5-mini'
     }
 }
+$kbChatModel = @{
+    kind                  = 'azureOpenAI'
+    azureOpenAIParameters = @{
+        resourceUri  = $openAIEndpoint
+        deploymentId = Get-Setting 'FOUNDRYIQ_DEMO_GPT52_DEPLOYMENT' 'gpt-5.2'
+        modelName    = 'gpt-5.2'
+    }
+}
 $embeddingDeployment = Get-Setting 'FOUNDRYIQ_DEMO_EMBEDDING_DEPLOYMENT' 'text-embedding-3-large'
 $bingAllowedDomainsSetting = Get-OptionalSetting 'FOUNDRYIQ_BING_ALLOWED_DOMAINS' 'grainger.com,mcmaster.com,rs-online.com,digikey.com,mouser.com,misumi-ec.com,automationdirect.com'
 $bingAllowedDomains = @($bingAllowedDomainsSetting -split '[,;]' | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
@@ -93,6 +103,20 @@ if ($bingAllowedDomains.Count -eq 0) { throw 'FOUNDRYIQ_BING_ALLOWED_DOMAINS dev
 foreach ($domain in $bingAllowedDomains) {
     if ($domain -notmatch '^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$') {
         throw "Dominio non valido in FOUNDRYIQ_BING_ALLOWED_DOMAINS: '$domain'. Usa nomi host senza schema o percorso."
+    }
+}
+
+$sharePointPath = Get-OptionalSetting 'SHAREPOINT_POLICIES_URL'
+$skipSharePoint = (Get-OptionalSetting 'SKIP_SHAREPOINT_SETUP') -eq 'true'
+$indexedSharePointConnection = Get-OptionalSetting 'SHAREPOINT_INDEXED_CONNECTION_STRING'
+$indexedSharePointQuery = ''
+if ($indexedSharePointConnection -and -not $skipSharePoint) {
+    $indexedSharePointQuery = Get-OptionalSetting 'SHAREPOINT_INDEXED_QUERY'
+    if (-not $indexedSharePointQuery) {
+        if (-not $sharePointPath) {
+            throw 'Per SharePoint indexed configura SHAREPOINT_POLICIES_URL oppure SHAREPOINT_INDEXED_QUERY: non viene indicizzato tutto il sito per default.'
+        }
+        $indexedSharePointQuery = "includeFolder=$sharePointPath"
     }
 }
 
@@ -160,8 +184,7 @@ $retrievalInstructions = @(
     "Usa '$BlobKnowledgeSourceName' per manuali, specifiche delle macchine, manutenzione e troubleshooting."
     "Usa '$McpKnowledgeSourceName' per ricambi, giacenze, sottoscorta, ordini e alternative; scegli i tool pertinenti come search_parts, check_stock, low_stock_report e find_alternative_parts."
 )
-$sharePointPath = Get-OptionalSetting 'SHAREPOINT_POLICIES_URL'
-if ($sharePointPath -and (Get-OptionalSetting 'SKIP_SHAREPOINT_SETUP') -ne 'true') {
+if ($sharePointPath -and -not $skipSharePoint) {
     # Remote source: SharePoint is queried live through the Copilot Retrieval API with the end-user token.
     Invoke-SearchPut "knowledgesources/$SharePointKnowledgeSourceName" @{
         name                       = $SharePointKnowledgeSourceName
@@ -178,6 +201,37 @@ if ($sharePointPath -and (Get-OptionalSetting 'SKIP_SHAREPOINT_SETUP') -ne 'true
 }
 else {
     Write-Host "  SharePoint non configurato (SHAREPOINT_POLICIES_URL assente): knowledge source '$SharePointKnowledgeSourceName' saltata."
+}
+
+if ($indexedSharePointConnection -and -not $skipSharePoint) {
+    Invoke-SearchPut "knowledgesources/$IndexedSharePointKnowledgeSourceName" @{
+        name                       = $IndexedSharePointKnowledgeSourceName
+        kind                       = 'indexedSharePoint'
+        description                = 'Policy aziendali SharePoint indicizzate: sicurezza, procedure e conformita, con permessi documentali importati.'
+        indexedSharePointParameters = @{
+            connectionString    = $indexedSharePointConnection
+            containerName       = 'useQuery'
+            query               = $indexedSharePointQuery
+            ingestionParameters = @{
+                contentExtractionMode      = 'minimal'
+                ingestionPermissionOptions = @('userIds', 'groupIds')
+                embeddingModel             = @{
+                    kind                  = 'azureOpenAI'
+                    azureOpenAIParameters = @{
+                        resourceUri  = $openAIEndpoint
+                        deploymentId = $embeddingDeployment
+                        modelName    = 'text-embedding-3-large'
+                    }
+                }
+            }
+        }
+    }
+    $knowledgeSources += @{ name = $IndexedSharePointKnowledgeSourceName }
+    $retrievalInstructions += "Usa '$IndexedSharePointKnowledgeSourceName' per cercare nelle policy SharePoint indicizzate con ACL; i contenuti e i permessi riflettono l'ultima indicizzazione, non una verifica live. Evita di duplicare le stesse policy restituite dalla sorgente remota."
+    Write-Host '  SharePoint indexed configurato: verifica il completamento e gli eventuali errori dell''indexer nel portale Search.'
+}
+else {
+    Write-Host "  SharePoint indexed non configurato o saltato: imposta SHAREPOINT_INDEXED_CONNECTION_STRING per aggiungere '$IndexedSharePointKnowledgeSourceName'."
 }
 
 Invoke-SearchPut "knowledgesources/$BingKnowledgeSourceName" @{
@@ -200,7 +254,7 @@ Invoke-SearchPut "knowledgebases/$KnowledgeBaseName" @{
     name                     = $KnowledgeBaseName
     description              = 'Assistente tecnici WPC: manuali macchine, ricambi e giacenze, policy aziendali e ricerca web Bing filtrata.'
     knowledgeSources         = $knowledgeSources
-    models                   = @($chatModel)
+    models                   = @($kbChatModel)
     # 'minimal' is not supported with MCP knowledge sources.
     retrievalReasoningEffort = @{ kind = 'low' }
     retrievalInstructions    = ($retrievalInstructions -join "`n")

@@ -15,8 +15,8 @@ __pycache__/
 infra/main.json
 
 # Generated docs site (scripts/build_docs.py + mkdocs build)
-.site-src/
-site/
+/.site-src/
+/site/
 
 # Local editor and operating system files
 .vscode/
@@ -24,6 +24,8 @@ site/
 .DS_Store
 Thumbs.db
 *.log
+node_modules/
+webapp-chat/frontend/dist/
 
 # Deployment state without azd (scripts/deploy_noazd.ps1)
 .deploy/

@@ -14,6 +14,8 @@ flowchart LR
 
 Il catalogo in [data/inventory.json](data/inventory.json) è **sintetico**: i part number derivano dalle liste componenti dei manuali, mentre giacenze, ubicazioni, fornitori, costi e ordini sono inventati per la demo. In Azure lo stesso catalogo è caricato in **Azure SQL Database** (tabelle `warehouses`, `parts`, `part_stock`, `purchase_orders`, `part_alternates`, definite in [sql_source.py](sql_source.py)) e il server lo legge con la propria identità gestita; in locale usa il file JSON.
 
+La [registrazione multi-fonte](../docs/videos/demo-multi-fonte.mp4) e il [confronto agenti](../docs/videos/demo-agenti.mp4) mostrano query effettive ai servizi della demo, con disponibilità dei ricambi e tool osservati. **Servizio reale non significa catalogo reale di un cliente**. Il server può leggere dalla cache SQL o dal fallback JSON: per identificare la sorgente attiva controlla `/healthz`, non dedurla dalla risposta del modello. [Copione e piano di riserva offline](../docs/demo-guide.md).
+
 ## Tool esposti
 
 Tutti i tool sono in sola lettura e restituiscono `{ "count": n, "results": [ { "id", "title", "content", ... } ] }`, dove `content` è un riepilogo testuale autosufficiente utile al reranker e i restanti campi sono strutturati.
@@ -83,7 +85,7 @@ Test:
 
 ```powershell
 azd env get-value MCP_SERVER_URL   # https://<web-app>.azurewebsites.net/mcp
-azd env get-value MCP_API_KEY
+$env:MCP_API_KEY = azd env get-value MCP_API_KEY  # carica senza stampare la chiave
 az webapp log tail -g (azd env get-value AZURE_RESOURCE_GROUP) -n (azd env get-value MCP_APP_NAME)
 ```
 
@@ -91,7 +93,7 @@ Il [Dockerfile](Dockerfile) resta disponibile per altri host di container; per u
 
 ## Collegamento a Foundry IQ
 
-L'hook `postdeploy` esegue [setup_foundry_iq.ps1](../scripts/setup_foundry_iq.ps1), che crea la knowledge source `ricambi-magazzino-ks` di tipo `mcpServer` e la aggiunge alla knowledge base `wpc-foundryiq-kb`. Per rieseguirlo: `pwsh ./scripts/setup_foundry_iq.ps1`.
+L'hook `postdeploy` esegue [setup_foundry_iq.ps1](../scripts/setup_foundry_iq.ps1) (oppure l'equivalente passo in [03-foundry-iq-agenti.ipynb](../notebooks/deploy/03-foundry-iq-agenti.ipynb)), che crea la knowledge source `ricambi-magazzino-ks` di tipo `mcpServer` e la aggiunge alla knowledge base `wpc-foundryiq-kb`. Per rieseguirlo da terminale: `pwsh ./scripts/setup_foundry_iq.ps1`. Lo smoke test di `/healthz` e `tools/list` e le chiamate dell'agente `wpc-magazzino-assistant` sono verificabili anche in [demo-agenti.ipynb](../notebooks/demo/demo-agenti.ipynb).
 
 Esempi di domande:
 

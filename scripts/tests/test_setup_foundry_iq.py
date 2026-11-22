@@ -13,12 +13,23 @@ PWSH = shutil.which("pwsh")
 
 @pytest.mark.skipif(PWSH is None, reason="PowerShell is required")
 @pytest.mark.parametrize(
-    ("url_configured", "skip_sharepoint", "with_sharepoint"),
-    [(False, False, False), (True, False, True), (True, True, False)],
+    ("url_configured", "skip_sharepoint", "indexed_configured", "indexed_query", "valid"),
+    [
+        (False, False, False, "", True),
+        (True, False, False, "", True),
+        (True, True, False, "", True),
+        (True, False, True, "", True),
+        (True, True, True, "", True),
+        (False, False, True, "includeFolder=https://example.sharepoint.com/custom", True),
+        (True, False, True, "includeFolder=https://example.sharepoint.com/custom", True),
+        (False, False, True, "", False),
+    ],
 )
 def test_knowledge_base_retrieval_instructions_follow_available_sources(
-    tmp_path, url_configured, skip_sharepoint, with_sharepoint
+    tmp_path, url_configured, skip_sharepoint, indexed_configured, indexed_query, valid
 ):
+    with_sharepoint = url_configured and not skip_sharepoint
+    with_indexed_sharepoint = indexed_configured and not skip_sharepoint
     env = os.environ.copy()
     for key in list(env):
         if key.startswith(("FOUNDRYIQ_", "SHAREPOINT_", "MCP_")):
@@ -41,6 +52,12 @@ def test_knowledge_base_retrieval_instructions_follow_available_sources(
             "SKIP_ACL_DEMO_SETUP": "false",
             "SKIP_SHAREPOINT_SETUP": "true" if skip_sharepoint else "false",
             "SHAREPOINT_POLICIES_URL": "https://example.sharepoint.com/policies" if url_configured else "",
+            "SHAREPOINT_INDEXED_CONNECTION_STRING": (
+                "SharePointOnlineEndpoint=https://example.sharepoint.com;"
+                "ApplicationId=11111111-1111-1111-1111-111111111111;ApplicationSecret=test-secret"
+                if indexed_configured else ""
+            ),
+            "SHAREPOINT_INDEXED_QUERY": indexed_query,
         }
     )
     script = str(ROOT / "scripts" / "setup_foundry_iq.ps1").replace("'", "''")
@@ -63,6 +80,7 @@ function global:az {{
 }}
 & '{script}' -KnowledgeBaseName 'demo-test' -BlobKnowledgeSourceName 'manuals-test' `
     -McpKnowledgeSourceName 'parts-test' -SharePointKnowledgeSourceName 'policies-test' `
+    -IndexedSharePointKnowledgeSourceName 'policies-indexed-test' `
     -BingKnowledgeSourceName 'web-test'
 """
     result = subprocess.run(
@@ -73,6 +91,13 @@ function global:az {{
         env=env,
         check=False,
     )
+    assert "test-secret" not in result.stdout + result.stderr
+    if not valid:
+        assert result.returncode != 0
+        assert "SHAREPOINT_POLICIES_URL" in result.stderr
+        assert "SHAREPOINT_INDEXED_QUERY" in result.stderr
+        assert not capture.exists()
+        return
     assert result.returncode == 0, result.stderr or result.stdout
     requests = [json.loads(line) for line in capture.read_text(encoding="utf-8").splitlines()]
     kb = next(item["body"] for item in requests if "/knowledgebases/demo-test?" in item["url"])
@@ -83,9 +108,43 @@ function global:az {{
     assert all(tool in instructions for tool in ("search_parts", "check_stock", "low_stock_report"))
     assert ("policies-test" in instructions) is with_sharepoint
     assert ("policies-test" in [source["name"] for source in kb["knowledgeSources"]]) is with_sharepoint
+    assert ("policies-indexed-test" in instructions) is with_indexed_sharepoint
+    assert ("policies-indexed-test" in [source["name"] for source in kb["knowledgeSources"]]) is with_indexed_sharepoint
+    indexed_requests = [
+        item["body"] for item in requests
+        if "/knowledgesources/policies-indexed-test?" in item["url"]
+    ]
+    assert bool(indexed_requests) is with_indexed_sharepoint
+    if with_indexed_sharepoint:
+        source = indexed_requests[0]
+        assert source["kind"] == "indexedSharePoint"
+        parameters = source["indexedSharePointParameters"]
+        assert parameters["connectionString"] == env["SHAREPOINT_INDEXED_CONNECTION_STRING"]
+        assert parameters["containerName"] == "useQuery"
+        assert parameters["query"] == (indexed_query or "includeFolder=https://example.sharepoint.com/policies")
+        ingestion = parameters["ingestionParameters"]
+        assert ingestion["contentExtractionMode"] == "minimal"
+        assert ingestion["ingestionPermissionOptions"] == ["userIds", "groupIds"]
+        assert ingestion["embeddingModel"]["azureOpenAIParameters"] == {
+            "resourceUri": "https://openai.example",
+            "deploymentId": "text-embedding-3-large",
+            "modelName": "text-embedding-3-large",
+        }
+        assert "chatCompletionModel" not in ingestion
+    assert kb["models"] == [
+        {
+            "kind": "azureOpenAI",
+            "azureOpenAIParameters": {
+                "resourceUri": "https://openai.example",
+                "deploymentId": "gpt-5.2",
+                "modelName": "gpt-5.2",
+            },
+        }
+    ]
     assert kb["retrievalReasoningEffort"] == {"kind": "low"}
     assert kb["outputMode"] == "extractiveData"
 
     acl_kb = next(item["body"] for item in requests if "/knowledgebases/wpc-acl-kb?" in item["url"])
     assert "retrievalInstructions" not in acl_kb
+    assert acl_kb["models"][0]["azureOpenAIParameters"]["modelName"] == "gpt-5-mini"
     assert acl_kb["retrievalReasoningEffort"] == {"kind": "minimal"}

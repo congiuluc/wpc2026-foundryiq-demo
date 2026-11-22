@@ -4,11 +4,12 @@
 #  2. opens the SQL firewall to the current client IP and loads the spare parts catalog into Azure SQL
 #  3. grants the MCP App Service managed identity read access on the database
 #  4. uploads data/machinespecs to the Blob container for the Foundry IQ knowledge source
-#  5. creates the SharePoint site if needed and uploads data/sharepoint/policies (scripts/setup_sharepoint.ps1)
+#  5. creates the SharePoint site if needed and uploads data/sharepoint/policies (scripts/setup_sharepoint.ps1),
+#     then the secretless ingestion app for the indexed SharePoint source (scripts/setup_sharepoint_indexed.ps1)
 #  6. ACL demo: Entra groups + documents with POSIX ACLs on ADLS Gen2 (scripts/setup_acl_demo.ps1)
 #  7. chat web app: Entra sign-in with App Service authentication (scripts/setup_chat_auth.ps1)
 #  8. prints the values for the notebook
-# Set SKIP_SHAREPOINT_SETUP=true to skip step 5, SKIP_ACL_DEMO_SETUP=true to skip step 6, SKIP_CHAT_AUTH_SETUP=true to skip step 7.
+# Set SKIP_SHAREPOINT_SETUP=true to skip step 5 (SKIP_SHAREPOINT_INDEXED_SETUP=true only the indexed source), SKIP_ACL_DEMO_SETUP=true to skip step 6, SKIP_CHAT_AUTH_SETUP=true to skip step 7.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -101,6 +102,17 @@ else {
         Write-Warning "Configurazione SharePoint non riuscita: $($_.Exception.Message)"
         $failed.Add('SharePoint -> ./scripts/setup_sharepoint.ps1 (per saltarlo: SKIP_SHAREPOINT_SETUP=true)')
     }
+    if ($env:SKIP_SHAREPOINT_INDEXED_SETUP -eq 'true') {
+        Write-Host '  SharePoint indexed saltato (SKIP_SHAREPOINT_INDEXED_SETUP=true).'
+    }
+    else {
+        # Non-blocking: needs admin rights to grant Graph application permissions to the ingestion app.
+        try { & (Join-Path $PSScriptRoot 'setup_sharepoint_indexed.ps1') }
+        catch {
+            Write-Warning "App di ingestion SharePoint indexed non configurata: $($_.Exception.Message)"
+            $failed.Add('SharePoint indexed -> ./scripts/setup_sharepoint_indexed.ps1 (per saltarlo: SKIP_SHAREPOINT_INDEXED_SETUP=true)')
+        }
+    }
 }
 
 Write-Host '== postprovision 5/7: demo ACL (gruppi Entra + documenti ADLS Gen2) ==' -ForegroundColor Cyan
@@ -133,7 +145,7 @@ Write-Host '== postprovision 7/7: valori per il notebook ==' -ForegroundColor Cy
 Write-Host "CHAT_APP_URL          = `"$env:CHAT_APP_URL`""
 Write-Host "SUBSCRIPTION_ID       = `"$env:AZURE_SUBSCRIPTION_ID`""
 Write-Host "RESOURCE_GROUP_NAME   = `"$rg`""
-Write-Host "BICEP_DEPLOYMENT_NAME = `"$(if ($env:DEMO_DEPLOYMENT_NAME) { $env:DEMO_DEPLOYMENT_NAME } else { 'wpc-foundryiq-demo' })`""
+Write-Host "BICEP_DEPLOYMENT_NAME = `"$(if ($env:DEMO_DEPLOYMENT_NAME) { $env:DEMO_DEPLOYMENT_NAME } else { 'wpc-foundry-iq-demo' })`""
 if ($failed.Count -gt 0) {
     # Optional steps: provisioning stays valid, deploy continues. Each script is idempotent and can be rerun alone.
     Write-Warning "postprovision completato con $($failed.Count) passi opzionali non riusciti:"

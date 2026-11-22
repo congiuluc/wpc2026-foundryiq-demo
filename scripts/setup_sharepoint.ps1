@@ -1,8 +1,8 @@
 #!/usr/bin/env pwsh
-# Prepares the SharePoint content for the remote SharePoint knowledge source of Foundry IQ:
+# Prepares the SharePoint content for the remote and indexed SharePoint knowledge sources of Foundry IQ:
 #  1. signs in to Microsoft Graph (delegated, same tenant as Azure: required by the remote SharePoint source)
 #  2. finds the demo site or creates it as a communication site if it does not exist
-#  3. uploads data/sharepoint/policies to the <folder> folder of the default document library (skips unchanged files)
+#  3. uploads data/sharepoint/policies/{EN,IT} to matching language folders (skips unchanged files)
 #  4. saves SHAREPOINT_SITE_URL, SHAREPOINT_SITE_ID and SHAREPOINT_POLICIES_URL in the azd environment
 # Called by the azd postprovision hook; can also be run manually: pwsh ./scripts/setup_sharepoint.ps1
 # Optional azd env values: SHAREPOINT_SITE_URL (existing or new site), SHAREPOINT_FOLDER (default 'policies'),
@@ -11,7 +11,7 @@
 # when the module cannot be installed, e.g. PowerShell Gallery blocked by a proxy), SHAREPOINT_GRAPH_CLIENT_ID.
 [CmdletBinding()]
 param(
-    [string]$SiteAlias = 'wpc-foundryiq-demo',
+    [string]$SiteAlias = 'wpc-foundry-iq-demo',
     [string]$SiteTitle = 'WPC Foundry IQ Demo',
     [string]$SourceFolder = (Join-Path (Split-Path -Parent $PSScriptRoot) 'data/sharepoint/policies')
 )
@@ -138,9 +138,13 @@ function Connect-Graph([string[]]$Scopes) {
     Connect-MgGraph @connect
 }
 
-if (-not (Test-Path $SourceFolder)) { throw "Cartella sorgente non trovata: $SourceFolder" }
-$files = @(Get-ChildItem -Path $SourceFolder -File)
-if ($files.Count -eq 0) { throw "Nessun file da caricare in $SourceFolder" }
+$filesByLanguage = @{}
+foreach ($language in @('EN', 'IT')) {
+    $languageFolder = Join-Path $SourceFolder $language
+    if (-not (Test-Path -LiteralPath $languageFolder -PathType Container)) { throw "Cartella sorgente non trovata: $languageFolder" }
+    $filesByLanguage[$language] = @(Get-ChildItem -LiteralPath $languageFolder -File -Filter '*.pdf')
+    if ($filesByLanguage[$language].Count -eq 0) { throw "Nessun PDF da caricare in $languageFolder" }
+}
 
 $script:UseRestGraph = (Get-Setting 'SHAREPOINT_GRAPH_AUTH') -eq 'rest'
 $script:GraphToken = $null
@@ -207,22 +211,38 @@ Write-Host "Sito SharePoint: $($site.webUrl)"
 $folder = Get-Setting 'SHAREPOINT_FOLDER' 'policies'
 $drive = Invoke-Graph GET "v1.0/sites/$($site.id)/drive?`$select=id,name,webUrl"
 $folderPath = [Uri]::EscapeDataString($folder)
-$existing = @{}
-$current = Get-GraphOrNull "v1.0/drives/$($drive.id)/root:/${folderPath}:/children?`$select=name,size&`$top=999"
-if ($current) { foreach ($item in $current.value) { $existing[$item.name] = [long]$item.size } }
+$folderItem = Get-GraphOrNull "v1.0/drives/$($drive.id)/root:/${folderPath}?`$select=id,folder,webUrl"
+if (-not $folderItem) {
+    $folderItem = Invoke-Graph POST "v1.0/drives/$($drive.id)/root/children" @{
+        name = $folder; folder = @{}; '@microsoft.graph.conflictBehavior' = 'fail'
+    }
+}
+if (-not $folderItem.ContainsKey('folder')) { throw "Il percorso SharePoint '$folder' non e' una cartella." }
 
 $uploaded = 0
-foreach ($file in $files) {
-    if ($existing.ContainsKey($file.Name) -and $existing[$file.Name] -eq $file.Length) { continue }
-    # Simple upload (files < 250 MB); intermediate folders are created automatically.
-    $target = "v1.0/drives/$($drive.id)/root:/$folderPath/$([Uri]::EscapeDataString($file.Name)):/content"
-    Send-GraphFile $target $file.FullName
-    $uploaded++
-    Write-Host "  caricato: $($file.Name)"
+$total = 0
+foreach ($language in @('EN', 'IT')) {
+    $languageItem = Get-GraphOrNull "v1.0/drives/$($drive.id)/items/$($folderItem.id):/${language}?`$select=id,folder"
+    if (-not $languageItem) {
+        $languageItem = Invoke-Graph POST "v1.0/drives/$($drive.id)/items/$($folderItem.id)/children" @{
+            name = $language; folder = @{}; '@microsoft.graph.conflictBehavior' = 'fail'
+        }
+    }
+    if (-not $languageItem.ContainsKey('folder')) { throw "Il percorso SharePoint '$folder/$language' non e' una cartella." }
+    $existing = @{}
+    $current = Invoke-Graph GET "v1.0/drives/$($drive.id)/items/$($languageItem.id)/children?`$select=name,size&`$top=999"
+    foreach ($item in $current.value) { $existing[$item.name] = [long]$item.size }
+    foreach ($file in $filesByLanguage[$language]) {
+        $total++
+        if ($existing.ContainsKey($file.Name) -and $existing[$file.Name] -eq $file.Length) { continue }
+        $target = "v1.0/drives/$($drive.id)/items/$($languageItem.id):/$([Uri]::EscapeDataString($file.Name)):/content"
+        Send-GraphFile $target $file.FullName
+        $uploaded++
+        Write-Host "  caricato: $language/$($file.Name)"
+    }
 }
-Write-Host "File caricati: $uploaded, gia' aggiornati: $($files.Count - $uploaded) (libreria '$($drive.name)', cartella '$folder')."
+Write-Host "File caricati: $uploaded, gia' aggiornati: $($total - $uploaded) (libreria '$($drive.name)', cartella '$folder')."
 
-$folderItem = Invoke-Graph GET "v1.0/drives/$($drive.id)/root:/${folderPath}?`$select=webUrl"
 Set-AzdValue 'SHAREPOINT_SITE_URL' $site.webUrl
 # Graph site id is "<hostname>,<site collection id>,<web id>": the KQL SiteID filter uses the site collection id.
 Set-AzdValue 'SHAREPOINT_SITE_ID' ($site.id -split ',')[1]

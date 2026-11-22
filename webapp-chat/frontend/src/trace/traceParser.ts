@@ -135,6 +135,8 @@ function normalizePart(part: unknown): TracePart {
       server: str(part.server),
       tool_type: str(part.tool_type),
       error: str(part.error),
+      ...(typeof part.started_ms === "number" ? { started_ms: part.started_ms } : {}),
+      ...(typeof part.duration_ms === "number" ? { duration_ms: part.duration_ms } : {}),
     };
   }
   if (type === "text" || type === "input_text" || type === "output_text") {

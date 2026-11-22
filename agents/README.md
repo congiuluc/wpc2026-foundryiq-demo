@@ -2,7 +2,7 @@
 
 ![RAG classico vs Foundry IQ](../docs/images/rag-vs-foundryiq.png)
 
-Ogni file `*.yaml` di questa cartella definisce un Prompt Agent Foundry. L'hook `postdeploy` di azd li crea o aggiorna con [setup_foundry_agents.py](../scripts/setup_foundry_agents.py), dopo aver creato knowledge base e connessioni. Se la creazione fallisce, `azd deploy` termina con errore: correggi la causa e rilancia `azd hooks run postdeploy` (lo script è idempotente).
+Ogni file `*.yaml` di questa cartella definisce un Prompt Agent Foundry. L'hook `postdeploy` di azd li crea o aggiorna con [setup_foundry_agents.py](../scripts/setup_foundry_agents.py) (oppure tramite il notebook [03-foundry-iq-agenti.ipynb](../notebooks/deploy/03-foundry-iq-agenti.ipynb)), dopo aver creato knowledge base e connessioni. Se la creazione fallisce, `azd deploy` termina con errore: correggi la causa e rilancia `azd hooks run postdeploy` (lo script è idempotente).
 
 | Agente | Tool | Scopo |
 |---|---|---|
@@ -11,13 +11,21 @@ Ogni file `*.yaml` di questa cartella definisce un Prompt Agent Foundry. L'hook 
 | `wpc-rag-classico-rapido` | Azure AI Search (`simple`, top 3), MCP (`search_parts`, `check_stock`), web search (contesto `low`) | RAG "classico", prima di Foundry IQ: l'agente sceglie da solo tra tool indipendenti. |
 | `wpc-rag-classico-accurato` | Azure AI Search (`semantic`, top 10), MCP (7 tool), web search (contesto `medium`), prompt con orchestrazione esplicita | Stesse sorgenti del rapido, configurate diversamente. |
 
+Il prompt di `wpc-technician-assistant` richiede query in inglese e risposte nella lingua dell'utente, con citazioni `[ref_id:<valore>]` basate sugli ID non ambigui restituiti dal tool. La modifica al prompt richiede l'aggiornamento dell'agente distribuito. La knowledge base include ancora Bing: il prompt da solo non garantisce l'esclusione delle fonti web esterne.
+
 ### Come leggere il confronto
 
 - **Tra i due agenti RAG classici** le categorie di sorgenti sono le stesse (indice dei manuali, server MCP, Bing sugli stessi domini), come il modello. Cambiano però configurazione del retrieval, tool MCP disponibili e prompt: il confronto mostra anche l'effetto di queste scelte.
 - **Rispetto a `wpc-technician-assistant`** la knowledge base può includere anche SharePoint, che senza identità utente di solito non restituisce risultati. Foundry IQ pianifica le query, interroga le sorgenti pertinenti e riordina i risultati con un solo tool.
 - L'indice è quello creato dalla knowledge source Blob (`FOUNDRYIQ_DEMO_BLOB_INDEX`) e la connessione Search è `FOUNDRYIQ_SEARCH_CONNECTION_ID` (output Bicep).
 
-Il confronto si prova nella modalità **Agenti RAG vs IQ** della [chat web app](../webapp-chat/README.md).
+Il confronto si prova nella route `/demo/agenti` (modalità **Agenti RAG vs IQ**) della [chat web app](../webapp-chat/README.md) oppure nel notebook [demo-agenti.ipynb](../notebooks/demo/demo-agenti.ipynb).
+
+Per la presentazione senza connettività: [video MP4 del confronto](../docs/videos/demo-agenti.mp4) e [copione con prerequisiti e troubleshooting](../docs/demo-guide.md#demo-3-agenti-rag-classico-vs-foundry-iq). Le tre risposte sono acquisite dai servizi reali sul corpus sintetico. I KPI descrivono quella sessione: configurazioni, quota, cache e attività interne della KB possono cambiare, quindi non costituiscono un benchmark.
+
+[![Confronto Agenti RAG vs Foundry IQ nella chat web app](../docs/images/chat-agenti.png)](../docs/images/chat-agenti.png)
+
+[![Metriche della sessione reale: tool, tempi e token](../docs/images/chat-agenti-metriche.png)](../docs/images/chat-agenti-metriche.png)
 ```mermaid
 flowchart LR
     subgraph RAG["RAG classico: tool indipendenti"]
@@ -76,4 +84,4 @@ tools:
 
 Ogni versione salva nei metadata `definition_sha256`: se il file non cambia, non viene creata una nuova versione. Per saltare il passo durante `azd deploy` imposta `azd env set SKIP_FOUNDRY_AGENTS_SETUP true`.
 
-Gli agenti usano l'identità gestita del progetto: le ACL per documento della demo ACL non vengono applicate. Per l'enforcement delle ACL usa la [chat web app](../webapp-chat/README.md) o il notebook [acl-demo.ipynb](../acl-demo.ipynb).
+Gli agenti usano l'identità gestita del progetto: le ACL per documento della demo ACL non vengono applicate. Per l'enforcement delle ACL usa la route `/demo/acl` della [chat web app](../webapp-chat/README.md) o il notebook [demo-acl.ipynb](../notebooks/demo/demo-acl.ipynb).

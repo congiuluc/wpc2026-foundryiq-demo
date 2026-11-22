@@ -30,7 +30,7 @@ param sqlAdminLogin string
 @description('Name of the project created inside the Foundry account.')
 @minLength(2)
 @maxLength(64)
-param foundryProjectName string = 'wpc-foundryiq-demo'
+param foundryProjectName string = 'wpc-foundry-iq-demo'
 
 @description('Azure OpenAI chat model supported by Foundry IQ.')
 param chatModel string = 'gpt-5-mini'
@@ -43,15 +43,15 @@ param chatDeploymentSku string = 'DataZoneStandard'
 
 @description('Capacity units for the chat model deployment.')
 @minValue(1)
-param chatCapacity int = 100
+param chatCapacity int = 200
 
 @description('Capacity units for the embedding deployment.')
 @minValue(1)
-param embeddingCapacity int = 10
+param embeddingCapacity int = 20
 
 @description('Capacity units for the GPT-5.2 Global Standard deployment.')
 @minValue(1)
-param gpt52Capacity int = 100
+param gpt52Capacity int = 200
 
 @description('App Service plan SKU for the MCP server (B1 = cheapest with Always On, F1 = free).')
 param appServiceSkuName string = 'B1'
@@ -73,7 +73,7 @@ param mcpApiKey string
 param chatAuthClientId string = ''
 
 var tags = {
-  workload: 'wpc-foundryiq-demo'
+  workload: 'wpc-foundry-iq-demo'
   environment: 'demo'
   'azd-env-name': environmentName
 }
@@ -259,7 +259,7 @@ var demoConfig = {
 // Stable deployment name read by new-agent-deployment.ipynb (BICEP_DEPLOYMENT_NAME).
 module demoOutputs 'modules/demo-config.bicep' = {
   scope: rg
-  name: 'wpc-foundryiq-demo'
+  name: 'wpc-foundry-iq-demo'
   params: {
     demoConfig: demoConfig
     foundryAccountName: foundry.outputs.accountName
@@ -297,6 +297,7 @@ output FOUNDRYIQ_ACL_DFS_ENDPOINT string = storageAcl.outputs.dfsEndpoint
 output FOUNDRYIQ_ACL_CONTAINER string = storageAcl.outputs.containerName
 
 output SEARCH_SERVICE_NAME string = search.outputs.name
+output SEARCH_PRINCIPAL_ID string = search.outputs.principalId
 output STORAGE_ACCOUNT_NAME string = storage.outputs.name
 output FOUNDRY_ACCOUNT_NAME string = foundry.outputs.accountName
 output FOUNDRY_PROJECT_NAME string = foundry.outputs.projectName

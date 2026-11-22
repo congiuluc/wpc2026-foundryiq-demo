@@ -21,13 +21,13 @@
       "value": "${AZURE_PRINCIPAL_NAME}"
     },
     "chatCapacity": {
-      "value": "${CHAT_CAPACITY=100}"
+      "value": "${CHAT_CAPACITY=200}"
     },
     "embeddingCapacity": {
-      "value": "${EMBEDDING_CAPACITY=10}"
+      "value": "${EMBEDDING_CAPACITY=20}"
     },
     "gpt52Capacity": {
-      "value": "${GPT52_CAPACITY=100}"
+      "value": "${GPT52_CAPACITY=200}"
     },
     "appServiceSkuName": {
       "value": "${APP_SERVICE_SKU=B1}"

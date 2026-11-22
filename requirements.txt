@@ -1,5 +1,5 @@
 aiohttp
-azure-search-documents==11.7.0b2
+azure-search-documents==12.2.0b1
 azure-identity
 azure-storage-blob
 azure-storage-file-datalake

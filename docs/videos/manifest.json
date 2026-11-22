@@ -1,0 +1,206 @@
+{
+  "recorded_at_utc": "2026-11-22T22:56:00.795446+00:00",
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "format": "MP4 / H.264 / 24 fps",
+  "audio": false,
+  "provenance": "Current application, live Azure service responses, synthetic repository demo corpus",
+  "identity": "Azure CLI for local capture; personal profile values redacted",
+  "editing": "Italian on-screen captions; no fabricated responses or request-time adjustments",
+  "demos": {
+    "multi-fonte": {
+      "title": "Una domanda, pi\u00f9 fonti",
+      "video": "demo-multi-fonte.mp4",
+      "duration_seconds": 102.5,
+      "requests": [
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 10,
+          "citations": 0,
+          "elapsed_ms": 32955,
+          "sources": [
+            {
+              "name": "ricambi-magazzino-ks",
+              "type": "mcpServer",
+              "results": 2,
+              "error": false
+            },
+            {
+              "name": "machinespecs-ks",
+              "type": "azureBlob",
+              "results": 14,
+              "error": false
+            },
+            {
+              "name": "policies-sharepoint-indexed-ks",
+              "type": "indexedSharePoint",
+              "results": 16,
+              "error": false
+            }
+          ],
+          "tool_calls": 0,
+          "usage": {
+            "input_tokens": 4040,
+            "output_tokens": 1848,
+            "total_tokens": 5888
+          },
+          "agent": null,
+          "acl_requested": false,
+          "user_token_forwarded": true
+        }
+      ]
+    },
+    "acl": {
+      "title": "Permessi per documento",
+      "video": "demo-acl.mp4",
+      "duration_seconds": 85.54,
+      "requests": [
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 0,
+          "citations": 0,
+          "elapsed_ms": 1324,
+          "sources": [
+            {
+              "name": "acl-docs-ks",
+              "type": "azureBlob",
+              "results": 0,
+              "error": false
+            }
+          ],
+          "tool_calls": 0,
+          "usage": {},
+          "agent": null,
+          "acl_requested": false,
+          "user_token_forwarded": false
+        },
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 1,
+          "citations": 0,
+          "elapsed_ms": 10766,
+          "sources": [
+            {
+              "name": "acl-docs-ks",
+              "type": "azureBlob",
+              "results": 1,
+              "error": false
+            }
+          ],
+          "tool_calls": 0,
+          "usage": {
+            "input_tokens": 357,
+            "output_tokens": 174,
+            "total_tokens": 531
+          },
+          "agent": null,
+          "acl_requested": true,
+          "user_token_forwarded": true
+        },
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 0,
+          "citations": 0,
+          "elapsed_ms": 864,
+          "sources": [
+            {
+              "name": "acl-docs-ks",
+              "type": "azureBlob",
+              "results": 0,
+              "error": false
+            }
+          ],
+          "tool_calls": 0,
+          "usage": {},
+          "agent": null,
+          "acl_requested": false,
+          "user_token_forwarded": false
+        },
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 0,
+          "citations": 0,
+          "elapsed_ms": 891,
+          "sources": [
+            {
+              "name": "acl-docs-ks",
+              "type": "azureBlob",
+              "results": 0,
+              "error": false
+            }
+          ],
+          "tool_calls": 0,
+          "usage": {},
+          "agent": null,
+          "acl_requested": true,
+          "user_token_forwarded": true
+        }
+      ]
+    },
+    "agenti": {
+      "title": "RAG classico vs Foundry IQ",
+      "video": "demo-agenti.mp4",
+      "duration_seconds": 102.88,
+      "requests": [
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 0,
+          "citations": 0,
+          "elapsed_ms": 17019,
+          "sources": [],
+          "tool_calls": 1,
+          "usage": {
+            "input_tokens": 10768,
+            "output_tokens": 1022,
+            "total_tokens": 11790
+          },
+          "agent": "wpc-rag-classico-rapido",
+          "acl_requested": false,
+          "user_token_forwarded": false
+        },
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 0,
+          "citations": 0,
+          "elapsed_ms": 25136,
+          "sources": [],
+          "tool_calls": 2,
+          "usage": {
+            "input_tokens": 15312,
+            "output_tokens": 1479,
+            "total_tokens": 16791
+          },
+          "agent": "wpc-rag-classico-accurato",
+          "acl_requested": false,
+          "user_token_forwarded": false
+        },
+        {
+          "ok": true,
+          "http_status": 200,
+          "references": 8,
+          "citations": 2,
+          "elapsed_ms": 28459,
+          "sources": [],
+          "tool_calls": 1,
+          "usage": {
+            "input_tokens": 5207,
+            "output_tokens": 2041,
+            "total_tokens": 7248
+          },
+          "agent": "wpc-technician-assistant",
+          "acl_requested": false,
+          "user_token_forwarded": false
+        }
+      ]
+    }
+  }
+}

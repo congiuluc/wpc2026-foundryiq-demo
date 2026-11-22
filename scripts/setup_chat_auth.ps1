@@ -67,6 +67,8 @@ try {
     $accessFile = Write-TempJson $access
     $tempFiles += $accessFile
     Invoke-Az 'Permessi delegati' @('ad', 'app', 'update', '--id', $appId, '--required-resource-accesses', "@$accessFile") | Out-Null
+    # Groups in the app's ID token are display-only; the Search access token remains unchanged.
+    Invoke-Az 'Claim dei gruppi di sicurezza' @('ad', 'app', 'update', '--id', $appId, '--set', 'groupMembershipClaims=SecurityGroup') | Out-Null
 
     az ad sp show --id $appId --query id -o tsv 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {

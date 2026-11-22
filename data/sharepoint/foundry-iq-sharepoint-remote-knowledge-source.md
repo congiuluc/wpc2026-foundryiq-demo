@@ -8,11 +8,17 @@ La funzionalita e in **preview**: non ha SLA, non e consigliata per workload di 
 
 ## Automazione nella demo
 
-Con `azd up` gli hook automatizzano i passaggi tecnici: `postprovision` ([setup_sharepoint.ps1](../../scripts/setup_sharepoint.ps1)) crea il sito `wpc-foundryiq-demo` se non esiste e carica i PDF in `policies`; `postdeploy` ([setup_foundry_iq.ps1](../../scripts/setup_foundry_iq.ps1)) crea la knowledge source `policies-sharepoint-ks`, la aggiunge alla knowledge base e crea la connessione `RemoteTool` del progetto Foundry. Identita gestita del progetto e ruolo `Search Index Data Reader` sono gia nel Bicep. Restano da verificare licenze/PAYG e l'eventuale consenso amministrativo Microsoft Graph.
+Con `azd up` gli hook automatizzano i passaggi tecnici: `postprovision` ([setup_sharepoint.ps1](../../scripts/setup_sharepoint.ps1)) crea il sito `wpc-foundry-iq-demo` se non esiste e carica i PDF originali in `policies/EN` e le traduzioni in `policies/IT`; `postdeploy` ([setup_foundry_iq.ps1](../../scripts/setup_foundry_iq.ps1)) crea la knowledge source `policies-sharepoint-ks`, filtrata sulla cartella principale `policies`, la aggiunge alla knowledge base e crea la connessione `RemoteTool` del progetto Foundry. Gli stessi passaggi sono disponibili anche nel notebook [03-foundry-iq-agenti.ipynb](../../notebooks/deploy/03-foundry-iq-agenti.ipynb) e verificabili con [demo-multi-fonte.ipynb](../../notebooks/demo/demo-multi-fonte.ipynb). Identita gestita del progetto e ruolo `Search Index Data Reader` sono gia nel Bicep. Restano da verificare licenze/PAYG e l'eventuale consenso amministrativo Microsoft Graph.
+
+Lo script accetta `-SourceFolder` con le sottocartelle `EN` e `IT`, entrambe contenenti PDF. I file precedentemente caricati direttamente nella cartella SharePoint `policies` non vengono eliminati automaticamente: possono quindi rimanere duplicati nei risultati finche non vengono rimossi manualmente.
 
 Il setup SharePoint e opzionale e puo terminare con un avviso senza bloccare il deployment. Se PowerShell Gallery e bloccata, lo script tenta l'autenticazione Graph via REST; per forzarla con azd usa `azd env set SHAREPOINT_GRAPH_AUTH rest`, riesegui `pwsh ./scripts/setup_sharepoint.ps1` e poi `azd hooks run postdeploy`. Per la ripresa senza azd e gli altri casi vedi [Ripresa dopo un errore](../../infra/README.md#ripresa-dopo-un-errore).
 
+La [demo multi-fonte](../../docs/demo-guide.md#demo-1-una-domanda-piu-fonti) dispone di screenshot e [video offline](../../docs/videos/demo-multi-fonte.mp4) acquisiti con query effettive sul corpus sintetico. Consulta le source osservate e il [manifest](../../docs/videos/manifest.json): una registrazione non prova che SharePoint fosse disponibile, interrogato o autorizzato in ogni query. Sorgente remota e indexed hanno prerequisiti diversi; non presentare un risultato vuoto come una verifica positiva dei permessi o della licenza.
+
 ## Architettura in breve
+
+La demo supporta anche una sorgente distinta `policies-sharepoint-indexed-ks` di tipo `indexedSharePoint`, aggiunta alla stessa KB impostando `SHAREPOINT_INDEXED_CONNECTION_STRING`. A differenza della sorgente remota descritta qui, genera un indice Search e importa le ACL con i contenuti; richiede un'app di ingestion con permessi applicativi e consenso amministrativo. Vedi [configurazione SharePoint indexed](../../infra/README.md#sharepoint-indexed) per credenziale federata, selezione della cartella, limiti dei gruppi e verifica dell'indexer. Il login Graph delegato per l'upload non configura questa connessione.
 
 Una **remote SharePoint knowledge source** in Foundry IQ usa Azure AI Search / agentic retrieval per interrogare SharePoint tramite la **Microsoft 365 Copilot Retrieval API**.
 

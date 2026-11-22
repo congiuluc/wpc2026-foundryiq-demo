@@ -1,0 +1,11 @@
+ipykernel
+pandas
+requests
+pyyaml
+azure-identity>=1.20
+azure-search-documents==12.2.0b1
+azure-storage-blob
+azure-storage-file-datalake
+azure-ai-projects>=2.3.0
+openai
+mssql-python>=1.0

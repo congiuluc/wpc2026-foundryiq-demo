@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
-name: wpc-foundryiq-demo
+name: wpc-foundry-iq-demo
 metadata:
-  template: wpc-foundryiq-demo
+  template: wpc-foundry-iq-demo
 infra:
   provider: bicep
   path: infra
@@ -15,6 +15,11 @@ services:
     project: ./webapp-chat
     language: python
     host: appservice
+    hooks:
+      prepackage:
+        shell: pwsh
+        run: ./build_frontend.ps1
+        continueOnError: false
 hooks:
   preprovision:
     shell: pwsh

@@ -11,10 +11,12 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import unquote
@@ -22,7 +24,7 @@ from urllib.parse import unquote
 import requests
 from azure.identity import AzureCliCredential, DefaultAzureCredential, get_bearer_token_provider
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import AzureOpenAI
 from pydantic import BaseModel, Field
@@ -30,7 +32,7 @@ from pydantic import BaseModel, Field
 SEARCH_SCOPE = "https://search.azure.com/.default"
 SEARCH_AUDIENCES = ("https://search.azure.com", "880da380-985e-4198-81b9-e05b1cc53158")
 COGNITIVE_SCOPE = "https://cognitiveservices.azure.com/.default"
-STATIC_DIR = Path(__file__).parent / "static"
+FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 RUNNING_ON_APP_SERVICE = bool(os.getenv("WEBSITE_SITE_NAME"))
 
 
@@ -119,9 +121,6 @@ KNOWLEDGE_BASES: dict[str, dict[str, Any]] = {
                 "al responsabile?",
                 "sources": ["Manuali", "Ricambi", "SharePoint"],
             },
-        ],
-        # Additional multi-source test queries, shown only in the test panel.
-        "extra_tests": [
             {
                 "label": "Cutting Blade CGC-001 · manutenzione e sicurezza",
                 "question": "Per la Cutting Blade Assembly CGC-001 del Contoso Robotic Garment Cut-Sew: frequenza di "
@@ -134,6 +133,9 @@ KNOWLEDGE_BASES: dict[str, dict[str, Any]] = {
                 "Board 3D Printer, cosa prevede il manuale per la manutenzione?",
                 "sources": ["Ricambi", "Manuali"],
             },
+        ],
+        # Additional multi-source test queries, shown only in the test panel.
+        "extra_tests": [
             {
                 "label": "Print Bed Heater DS-PBH-004 · alternative",
                 "question": "Il Print Bed Heater DS-PBH-004 ha 45 giorni di lead time: ci sono alternative a magazzino "
@@ -246,6 +248,7 @@ def current_user(request: Request) -> dict[str, Any]:
         name = None
         source = "Azure CLI (esecuzione locale)"
     claims = jwt_claims(token) if token else {}
+    profile = user_profile(request, claims, source)
     if claims.get("aud") not in SEARCH_AUDIENCES:
         # Easy Auth returns a Graph token when the Search scope is missing from the login parameters.
         token = None
@@ -254,6 +257,69 @@ def current_user(request: Request) -> dict[str, Any]:
         "name": name or claims.get("upn") or claims.get("preferred_username") or claims.get("name"),
         "expires_on": claims.get("exp"),
         "source": source,
+        "profile": profile,
+    }
+
+
+def user_profile(request: Request, access_claims: dict[str, Any], source: str) -> dict[str, Any]:
+    """Display-only allowlist; never expose tokens or use these claims to authorize retrieval."""
+    identity_claims = access_claims
+    principal_claims: dict[str, list[str]] = {}
+    if RUNNING_ON_APP_SERVICE:
+        id_token = request.headers.get("x-ms-token-aad-id-token")
+        if id_token:
+            identity_claims = jwt_claims(id_token)
+        encoded = request.headers.get("x-ms-client-principal")
+        if encoded:
+            try:
+                principal = json.loads(base64.b64decode(encoded, validate=True))
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ValueError("Claim di identità Easy Auth non leggibili: accedi di nuovo.") from exc
+            if not isinstance(principal, dict) or not isinstance(principal.get("claims"), list):
+                raise ValueError("Claim di identità Easy Auth non validi: accedi di nuovo.")
+            for claim in principal["claims"]:
+                if isinstance(claim, dict) and isinstance(claim.get("typ"), str) and isinstance(claim.get("val"), str):
+                    principal_claims.setdefault(claim["typ"], []).append(claim["val"])
+
+    def values(key: str, mapped: str | None = None) -> list[str]:
+        found = principal_claims.get(key, []) + principal_claims.get(mapped or "", [])
+        if found:
+            return found
+        value = identity_claims.get(key)
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [v for v in value if isinstance(v, str)]
+        return []
+
+    def first(key: str, mapped: str | None = None) -> str | None:
+        return next(iter(values(key, mapped)), None)
+
+    groups = values("groups", "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups")
+    claim_names = identity_claims.get("_claim_names")
+    principal_overage = any(
+        key.rsplit("/", 1)[-1] == "groups.link"
+        or (key.rsplit("/", 1)[-1] == "hasgroups" and any(value.lower() == "true" for value in vals))
+        or (key == "_claim_names" and any('"groups"' in value for value in vals))
+        for key, vals in principal_claims.items()
+    )
+    overage = bool(identity_claims.get("hasgroups")) or (
+        isinstance(claim_names, dict) and "groups" in claim_names
+    ) or principal_overage
+    groups_present = "groups" in identity_claims or any(key.rsplit("/", 1)[-1] == "groups" for key in principal_claims)
+    return {
+        "display_name": first("name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"),
+        "username": request.headers.get("x-ms-client-principal-name") if RUNNING_ON_APP_SERVICE else (
+            first("preferred_username") or first("upn")
+        ),
+        "object_id": first("oid", "http://schemas.microsoft.com/identity/claims/objectidentifier")
+        or (request.headers.get("x-ms-client-principal-id") if RUNNING_ON_APP_SERVICE else None),
+        "tenant_id": first("tid", "http://schemas.microsoft.com/identity/claims/tenantid"),
+        "source": source,
+        "groups": sorted(set(groups)),
+        "groups_status": "overage" if overage else "available" if groups_present else "unavailable",
+        "roles": sorted(set(values("roles", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"))),
+        "token_expires_on": access_claims.get("exp"),
     }
 
 
@@ -266,11 +332,13 @@ class ChatRequest(BaseModel):
     knowledge_base: str = "demo"
     messages: list[ChatMessage] = Field(min_length=1, max_length=20)
     use_acl: bool = True
+    stream: bool = False
 
 
 class AgentChatRequest(BaseModel):
     agent: str
     messages: list[ChatMessage] = Field(min_length=1, max_length=20)
+    stream: bool = False
 
 
 def retrieve_body(messages: list[ChatMessage], mode: str) -> dict[str, Any]:
@@ -319,6 +387,10 @@ def summarize_references(result: dict[str, Any]) -> list[dict[str, Any]]:
         activity = activity_by_id.get(str(activity_id), {}) if activity_id is not None else {}
         source = ref.get("sourceData") or {}
         location = ref.get("blobUrl") or ref.get("url") or ref.get("webUrl") or source.get("url")
+        doc_url = ref.get("docUrl") or source.get("doc_url")
+        if not location and isinstance(doc_url, str):
+            # Indexed SharePoint returns a Graph drive path: keep only the path inside the library.
+            location = unquote(doc_url.split("root:/", 1)[-1]) if "root:/" in doc_url else doc_url
         title = ref.get("title") or source.get("title") or source.get("name")
         if not title and location:
             title = unquote(location.rstrip("/").split("/")[-1])
@@ -341,7 +413,10 @@ def summarize_references(result: dict[str, Any]) -> list[dict[str, Any]]:
 def summarize_activity(result: dict[str, Any]) -> list[dict[str, Any]]:
     activity = []
     for item in result.get("activity") or []:
-        entry = {k: item[k] for k in ("id", "type", "knowledgeSourceName", "count", "elapsedMs") if item.get(k) is not None}
+        entry = {k: item[k] for k in (
+            "id", "type", "knowledgeSourceName", "count", "elapsedMs", "startedAt", "completedAt",
+            "inputTokens", "outputTokens",
+        ) if item.get(k) is not None}
         for value in item.values():
             if isinstance(value, dict) and isinstance(value.get("search"), str):
                 entry["query"] = value["search"]
@@ -369,25 +444,416 @@ def summarize_sources(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def synthesize(messages: list[ChatMessage], extracted: str) -> str:
     if extracted.strip() in ("", "[]", "{}"):
         return NO_CONTENT_ANSWER
-    history = [{"role": m.role, "content": m.content} for m in messages[:-1]]
     completion = openai_client().chat.completions.create(
         model=CHAT_DEPLOYMENT,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *history,
-            {
-                "role": "user",
-                "content": f"Contenuti recuperati da Foundry IQ:\n{extracted[:60000]}\n\nDomanda: {messages[-1].content}",
-            },
-        ],
+        messages=synthesis_messages(messages, extracted),
         max_completion_tokens=4000,
     )
     return completion.choices[0].message.content or ""
 
 
+def synthesis_messages(messages: list[ChatMessage], extracted: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *[{"role": m.role, "content": m.content} for m in messages[:-1]],
+        {"role": "user", "content": (
+            f"Contenuti recuperati da Foundry IQ:\n{extracted[:60000]}\n\nDomanda: {messages[-1].content}"
+        )},
+    ]
+
+
+def sse_event(name: str, data: Any) -> str:
+    return f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def log_event(
+    started: float, phase: str, title: str, detail: str | None = None,
+    level: str = "info", private: bool = False,
+) -> str:
+    """Live timeline entry; `private` flags queries/tool arguments (shown in the Trace after redaction)."""
+    data: dict[str, Any] = {
+        "at_ms": round((time.perf_counter() - started) * 1000), "phase": phase, "title": title, "level": level,
+    }
+    if detail:
+        data["detail"] = detail
+    if private:
+        data["private"] = True
+    return sse_event("log", data)
+
+
+_ACTIVITY_NAMES = {
+    "modelQueryPlanning": "Pianificazione query (LLM)",
+    "modelAnswerSynthesis": "Sintesi risposta (LLM)",
+    "agenticReasoning": "Ragionamento agentico",
+    "semanticReranker": "Reranking semantico",
+}
+
+
+def _activity_label(item: dict[str, Any]) -> str:
+    kind = str(item.get("type") or "attività")
+    name = item.get("knowledgeSourceName")
+    return f"{name} ({kind})" if name else _ACTIVITY_NAMES.get(kind, kind)
+
+
+def _activity_detail(item: dict[str, Any]) -> str | None:
+    parts = []
+    if item.get("count") is not None:
+        parts.append(f"{item['count']} risultati")
+    if item.get("elapsedMs") is not None:
+        parts.append(f"{item['elapsedMs']} ms")
+    if item.get("inputTokens") is not None or item.get("outputTokens") is not None:
+        parts.append(f"token {item.get('inputTokens', '?')} in / {item.get('outputTokens', '?')} out")
+    if item.get("error"):
+        parts.append(f"errore: {_short(item['error'], 200)}")
+    return " · ".join(parts) or None
+
+
+def _reference_titles(references: list[dict[str, Any]], limit: int = 5) -> str | None:
+    titles = []
+    for ref in references[:limit]:
+        title = str(ref.get("title") or ref.get("id") or "riferimento")
+        if ref.get("knowledge_source"):
+            title += f" [{ref['knowledge_source']}]"
+        if isinstance(ref.get("score"), (int, float)):
+            title += f" ({ref['score']:.2f})"
+        titles.append(title)
+    if len(references) > limit:
+        titles.append(f"+{len(references) - limit} altri")
+    return " · ".join(titles) or None
+
+
+def read_sse(lines: Iterable[str | bytes]) -> Iterator[tuple[str, Any]]:
+    """Parse named SSE events, including comments and multiline JSON data."""
+    name, data = "message", []
+    for line in lines:
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if not line:
+            if data:
+                yield name, json.loads("\n".join(data))
+            name, data = "message", []
+        elif line.startswith("event:"):
+            name = line[6:].strip()
+        elif line.startswith("data:"):
+            data.append(line[5:].removeprefix(" "))
+    if data:
+        yield name, json.loads("\n".join(data))
+
+
+def retrieval_usage(activity: list[dict[str, Any]]) -> dict[str, int]:
+    usage = {}
+    for source, target in (("inputTokens", "input_tokens"), ("outputTokens", "output_tokens")):
+        values = [item[source] for item in activity if type(item.get(source)) is int]
+        if values:
+            usage[target] = sum(values)
+    if "input_tokens" in usage and "output_tokens" in usage:
+        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+    return usage
+
+
+def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, started: float) -> Iterator[str]:
+    result_data = {
+        "answer": "", "knowledge_base": kb["name"], "acl_applied": body.use_acl and bool(user_token),
+        "execution": {
+            "identity": "Managed identity della web app" if RUNNING_ON_APP_SERVICE else "Credenziale Azure locale",
+            "user_token_forwarded": bool(user_token), "acl_requested": body.use_acl,
+            "remote_sharepoint": bool(kb.get("remote_sharepoint")), "chat_deployment": CHAT_DEPLOYMENT,
+        },
+    }
+    response = None
+    try:
+        yield sse_event("status", {"stage": "Retrieval Foundry IQ", "result": result_data})
+        headers = {
+            "Authorization": f"Bearer {tokens.get(app_credential, SEARCH_SCOPE)}",
+            "Accept": "text/event-stream",
+        }
+        if user_token:
+            headers["x-ms-query-source-authorization"] = user_token
+        url = f"{SEARCH_ENDPOINT}/knowledgebases/{kb['name']}/retrieve?api-version={SEARCH_API_VERSION}"
+        yield log_event(started, "retrieval", f"Richiesta retrieve alla knowledge base {kb['name']}", " · ".join([
+            f"input: {kb['query']}",
+            "token utente inoltrato (ACL)" if user_token else "identità dell'app, nessun token utente",
+        ]))
+        response = requests.post(url, headers=headers, json=retrieve_body(body.messages, kb["query"]), timeout=120, stream=True)
+        if response.status_code == 400 and kb["query"] == "messages":
+            response.close()
+            yield log_event(started, "retrieval", "Formato messages rifiutato (400): nuovo tentativo con intents", level="warning")
+            response = requests.post(url, headers=headers, json=retrieve_body(body.messages, "intents"), timeout=120, stream=True)
+        if not response.ok:
+            raise HTTPException(status_code=502, detail=f"Retrieve {response.status_code}: {response.text[:800]}")
+        if "text/event-stream" not in response.headers.get("content-type", "").lower():
+            raise RuntimeError("Il servizio retrieve non ha restituito uno stream SSE.")
+        response.encoding = "utf-8"
+        completed = None
+        raw_activity: list[dict[str, Any]] = []
+        for name, data in read_sse(response.iter_lines(chunk_size=1, decode_unicode=True)):
+            if name == "retrieval.started":
+                yield log_event(started, "retrieval", "Retrieval avviato da Foundry IQ", " · ".join(
+                    f"{label}: {data[key]}" for key, label in (
+                        ("outputMode", "output"), ("reasoningEffort", "reasoning effort"), ("requestId", "request id"),
+                    ) if data.get(key) is not None
+                ) or None)
+            elif name in ("activity.started", "activity.completed"):
+                activity = summarize_activity({"activity": [data]})[0]
+                activity["status"] = "in_progress" if name.endswith("started") else "completed"
+                yield sse_event("activity", activity)
+                if name.endswith("started"):
+                    yield log_event(started, "retrieval", f"Avviata: {_activity_label(data)}")
+                else:
+                    raw_activity.append(data)
+                    yield log_event(
+                        started, "retrieval", f"Completata: {_activity_label(data)}", _activity_detail(data),
+                        level="error" if data.get("error") else "info",
+                    )
+                    if activity.get("query"):
+                        yield log_event(started, "retrieval", f"Query eseguita su {_activity_label(data)}",
+                                        activity["query"], private=True)
+            elif name == "references.completed" and isinstance(data, list):
+                references = summarize_references({"references": data, "activity": raw_activity})
+                result_data["references"] = references
+                yield sse_event("references", {"items": references})
+                yield log_event(started, "retrieval", f"Riferimenti risolti: {len(references)}", _reference_titles(references))
+            elif name == "response.completed":
+                completed = data["response"]
+                if data.get("statusCode") == 206:
+                    yield log_event(started, "retrieval", "Risultato parziale (206): alcune fonti non hanno risposto", level="warning")
+                break
+            elif name == "error":
+                raise RuntimeError(f"Retrieve: {json.dumps(data.get('error', data))[:800]}")
+        if completed is None:
+            raise RuntimeError("Stream retrieve interrotto prima del completamento.")
+        response.close()
+        activity = summarize_activity(completed)
+        result_data.update(
+            references=summarize_references(completed), sources=summarize_sources(activity),
+            activity=activity, retrieval_usage=retrieval_usage(activity),
+        )
+        usage_text = result_data["retrieval_usage"].get("total_tokens")
+        yield log_event(started, "retrieval", "Retrieval completato", " · ".join([
+            f"{len(result_data['references'])} riferimenti",
+            f"{len(result_data['sources'])} fonti interrogate",
+            f"token retrieval: {usage_text}" if usage_text is not None else "token retrieval non restituiti",
+        ]))
+        extracted = extracted_text(completed)
+        has_content = extracted.strip() not in ("", "[]", "{}")
+        result_data["execution"]["synthesis_performed"] = has_content
+        yield sse_event("status", {"stage": "Generazione risposta", "result": result_data})
+        if has_content:
+            yield log_event(started, "generation", f"Sintesi con il modello {CHAT_DEPLOYMENT}",
+                            f"{len(extracted)} caratteri di contenuto recuperato")
+            with openai_client().chat.completions.create(
+                model=CHAT_DEPLOYMENT, messages=synthesis_messages(body.messages, extracted),
+                max_completion_tokens=4000, stream=True, stream_options={"include_usage": True},
+            ) as stream:
+                finished = False
+                for chunk in stream:
+                    if chunk.usage is not None:
+                        usage = chunk.usage
+                        result_data["usage"] = {
+                            "input_tokens": usage.prompt_tokens, "output_tokens": usage.completion_tokens,
+                            "total_tokens": usage.total_tokens,
+                        }
+                        yield sse_event("usage", result_data["usage"])
+                        yield log_event(started, "generation", "Token generazione ricevuti",
+                                        f"{usage.prompt_tokens} in / {usage.completion_tokens} out / {usage.total_tokens} totali")
+                    for choice in chunk.choices:
+                        if choice.delta.content:
+                            if not result_data["answer"]:
+                                yield log_event(started, "generation", "Primo token della risposta")
+                            result_data["answer"] += choice.delta.content
+                            yield sse_event("delta", {"text": choice.delta.content})
+                        if choice.finish_reason is not None:
+                            if choice.finish_reason != "stop":
+                                raise RuntimeError(f"Generazione incompleta: {choice.finish_reason}.")
+                            finished = True
+                            yield log_event(started, "generation", "Generazione terminata", f"{len(result_data['answer'])} caratteri")
+                if not finished:
+                    raise RuntimeError("Stream del modello interrotto prima del completamento.")
+        else:
+            yield log_event(started, "generation", "Nessun contenuto recuperato: sintesi saltata", level="warning")
+            result_data["answer"] = NO_CONTENT_ANSWER
+            yield sse_event("delta", {"text": NO_CONTENT_ANSWER})
+        result_data["elapsed_ms"] = round((time.perf_counter() - started) * 1000)
+        yield log_event(started, "done", "Risposta completata", f"{result_data['elapsed_ms']} ms totali")
+        yield sse_event("completed", result_data)
+    except Exception as exc:  # Stream errors must remain visible after HTTP headers have been sent.
+        message = str(exc.detail if isinstance(exc, HTTPException) else exc)[:800]
+        yield log_event(started, "done", "Errore", message, level="error")
+        yield sse_event("error", {"message": message})
+    finally:
+        if response is not None:
+            response.close()
+
+
+def _tool_event(item: dict[str, Any], arguments: str | None = None) -> dict[str, Any]:
+    action = _as_dict(item.get("action"))
+    return {
+        "id": item.get("id"), "type": item["type"],
+        "name": item.get("name") or item.get("server_label") or item["type"].removesuffix("_call"),
+        "server": item.get("server_label"), "status": item.get("status"),
+        "arguments": _short(item.get("arguments") or action.get("query") or action.get("queries")) or arguments,
+        "error": _short(item.get("error")),
+    }
+
+
+def _tool_result_detail(item: dict[str, Any]) -> str | None:
+    results = item.get("results")
+    if isinstance(results, list):
+        names = [str(_as_dict(r).get("filename") or _as_dict(r).get("title") or "") for r in results]
+        names = [n for n in names if n]
+        return " · ".join([f"{len(results)} risultati", *names[:5]])
+    output = item.get("output")
+    if output not in (None, ""):
+        text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False, default=str)
+        return f"output di {len(text)} caratteri"
+    return None
+
+
+def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
+    text_emitted = False
+    try:
+        yield sse_event("status", {"stage": "Esecuzione agente e tool"})
+        yield log_event(started, "agent", f"Richiesta inviata all'agente {body.agent}", "identità del progetto, nessun token utente")
+        tool_numbers: dict[str, int] = {}
+        tool_started: dict[str, int] = {}
+        arguments: dict[str, str] = {}
+        with agents_client().responses.create(
+            input=[{"role": m.role, "content": m.content} for m in body.messages],
+            extra_body={"agent_reference": {"name": body.agent, "type": "agent_reference"}}, stream=True,
+        ) as stream:
+            for event in stream:
+                if event.type == "response.output_text.delta":
+                    if not text_emitted and event.delta:
+                        yield log_event(started, "generation", "Primo token della risposta")
+                    text_emitted = text_emitted or bool(event.delta)
+                    yield sse_event("delta", {"text": event.delta})
+                elif event.type == "response.created":
+                    model = _as_dict(getattr(event, "response", None)).get("model")
+                    yield log_event(started, "agent", "Esecuzione avviata dal servizio", f"modello: {model}" if model else None)
+                elif event.type in ("response.output_item.added", "response.output_item.done"):
+                    item = _as_dict(event.item)
+                    kind = item.get("type") or ""
+                    done = event.type.endswith("done")
+                    if kind.endswith("_call"):
+                        key = str(item.get("id"))
+                        tool_numbers.setdefault(key, len(tool_numbers) + 1)
+                        tool = _tool_event(item, arguments.get(key))
+                        now_ms = round((time.perf_counter() - started) * 1000)
+                        tool["started_ms"] = tool_started.setdefault(key, now_ms)
+                        if done:
+                            tool["completed_ms"] = now_ms
+                            tool["duration_ms"] = now_ms - tool["started_ms"]
+                        yield sse_event("tool", tool)
+                        label = f"{tool['name']}" + (f" ({tool['server']})" if tool["server"] else "")
+                        if not done:
+                            yield log_event(started, "tool", f"Chiamata tool avviata: {label}", kind)
+                            continue
+                        failed = bool(tool["error"]) or tool["status"] == "failed"
+                        yield log_event(
+                            started, "tool", f"Tool {'in errore' if failed else 'completato'}: {label}",
+                            tool["error"] or _tool_result_detail(item), level="error" if failed else "info",
+                        )
+                        if tool["arguments"] and key not in arguments:
+                            yield log_event(started, "tool", f"Argomenti di {label}", tool["arguments"], private=True)
+                        if kind == "mcp_call" and item.get("name") == "knowledge_base_retrieve":
+                            references = _knowledge_references(item.get("output"), tool_numbers[key])
+                            yield sse_event("references", {"items": references, "append": True})
+                            yield log_event(started, "tool", f"Riferimenti Foundry IQ ricevuti: {len(references)}",
+                                            _reference_titles(references))
+                    elif kind == "mcp_list_tools":
+                        if done:
+                            tools = [str(_as_dict(t).get("name")) for t in item.get("tools") or [] if _as_dict(t).get("name")]
+                            yield log_event(started, "tool", f"Tool disponibili da {item.get('server_label') or 'server MCP'}: {len(tools)}",
+                                            ", ".join(tools[:10]) or None)
+                        else:
+                            yield log_event(started, "tool", f"Elenco tool dal server MCP {item.get('server_label') or ''}".strip())
+                    elif kind == "reasoning":
+                        summary = " ".join(str(_as_dict(s).get("text") or "") for s in item.get("summary") or []).strip()
+                        yield log_event(started, "agent", "Ragionamento completato" if done else "Ragionamento del modello",
+                                        _short(summary, 400) if done else None)
+                    elif kind == "message" and not done:
+                        yield log_event(started, "generation", "Scrittura della risposta")
+                    elif kind.endswith("_output") and done:
+                        yield log_event(started, "tool", f"Risultato ricevuto: {kind}", _tool_result_detail(item))
+                elif event.type in ("response.mcp_call_arguments.done", "response.function_call_arguments.done"):
+                    key = str(getattr(event, "item_id", None))
+                    args = _short(getattr(event, "arguments", None))
+                    if args:
+                        arguments[key] = args
+                        yield log_event(started, "tool", "Argomenti inviati al tool", args, private=True)
+                elif event.type == "response.output_text.annotation.added":
+                    note = _as_dict(getattr(event, "annotation", None))
+                    title = note.get("title") or note.get("filename") or note.get("url") or note.get("file_id")
+                    if title:
+                        citation = {"title": title, "url": note.get("url"), "type": note.get("type")}
+                        yield sse_event("citation", citation)
+                        yield log_event(started, "generation", f"Citazione: {_citation_title(str(title))}", note.get("type"))
+                elif event.type == "response.completed":
+                    result = agent_result(body, event.response, started)
+                    usage = result.get("usage") or {}
+                    yield log_event(started, "done", "Risposta completata", " · ".join([
+                        f"{len(result.get('tool_calls') or [])} chiamate tool",
+                        f"{len(result.get('citations') or []) + len(result.get('references') or [])} riferimenti",
+                        f"token: {usage['total_tokens']}" if usage.get("total_tokens") is not None else "token non restituiti",
+                        f"{result['elapsed_ms']} ms",
+                    ]))
+                    yield sse_event("completed", result)
+                    return
+                elif event.type in ("error", "response.failed", "response.incomplete"):
+                    details = _as_dict(event)
+                    error = _as_dict(_as_dict(details.get("response")).get("error"))
+                    raise RuntimeError(f"Stream agente non completato: {details.get('message') or error.get('message') or event.type}.")
+        raise RuntimeError("Stream agente interrotto prima del completamento.")
+    except Exception as exc:  # Report terminal failures to the comparison card.
+        if body.agent == "wpc-rag-classico-accurato" and not text_emitted and "A user error occurred while executing a tool call" in str(exc):
+            compatibility = {
+                "mode": "json_retry",
+                "warning": "Il tool ha interrotto lo streaming: query ripetuta senza streaming.",
+                "usage_scope": "Tool e token mostrati si riferiscono al retry. Il consumo del tentativo interrotto non è disponibile.",
+            }
+            yield log_event(started, "agent", "Stream interrotto dal tool: retry senza streaming", str(exc)[:400], level="warning")
+            yield sse_event("status", {
+                "stage": "Retry senza streaming del risultato",
+                "result": {"answer": "", "streaming": compatibility},
+            })
+            try:
+                response = agents_client().responses.create(
+                    input=[{"role": m.role, "content": m.content} for m in body.messages],
+                    extra_body={"agent_reference": {"name": body.agent, "type": "agent_reference"}},
+                )
+                status = response.get("status") if isinstance(response, Mapping) else getattr(response, "status", None)
+                if status != "completed":
+                    raise RuntimeError(f"Risposta del retry non completata: {status}.")
+                result = agent_result(body, response, started)
+                yield log_event(started, "done", "Retry completato", f"{len(result.get('tool_calls') or [])} chiamate tool")
+                yield sse_event("completed", {**result, "streaming": compatibility})
+            except Exception as retry_error:
+                message = f"Retry agente {body.agent}: {str(retry_error)[:800]}"
+                yield log_event(started, "done", "Retry fallito", message, level="error")
+                yield sse_event("error", {"message": message})
+            return
+        message = f"Agente {body.agent}: {str(exc)[:800]}"
+        yield log_event(started, "done", "Errore", message, level="error")
+        yield sse_event("error", {"message": message})
+
+
+def agent_result(body: AgentChatRequest, response: Any, started: float) -> dict[str, Any]:
+    return {
+        "agent": body.agent, **AGENTS[body.agent], **summarize_agent_output(response),
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+        "execution": {"identity": "Identità del progetto", "user_token_forwarded": False, "acl_requested": False},
+    }
+
+
+def streaming_response(events: Iterable[str]) -> StreamingResponse:
+    return StreamingResponse(events, media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+    })
+
+
 def _as_dict(item: Any) -> dict[str, Any]:
-    if isinstance(item, dict):
-        return item
+    if isinstance(item, Mapping):
+        return dict(item)
     dump = getattr(item, "model_dump", None)
     return dump() if callable(dump) else {}
 
@@ -399,40 +865,168 @@ def _short(value: Any, limit: int = 300) -> str | None:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+_SOURCE_MARKER = re.compile(r"【\d+:\d+†[^】]+】")
+
+
+def _knowledge_reference_records(value: Any, marker: str | None = None):
+    if isinstance(value, str):
+        decoder = json.JSONDecoder()
+        position = 0
+        while position < len(value):
+            while position < len(value) and value[position].isspace():
+                position += 1
+            found = _SOURCE_MARKER.match(value, position)
+            if found:
+                marker = found.group()
+                position = found.end()
+                continue
+            if position == len(value):
+                break
+            try:
+                parsed, end = decoder.raw_decode(value, position)
+            except json.JSONDecodeError:
+                found = _SOURCE_MARKER.search(value, position)
+                if not found:
+                    return
+                marker = found.group()
+                position = found.end()
+                continue
+            if not isinstance(parsed, str) or parsed != value[position:end]:
+                yield from _knowledge_reference_records(parsed, marker)
+            marker = None
+            position = end
+    elif isinstance(value, list):
+        for item in value:
+            yield from _knowledge_reference_records(item)
+    elif isinstance(value, Mapping):
+        source_fields = ("sourceData", "uri", "url", "web_url", "blob_url", "blobUrl", "uid", "document_id")
+        has_source_data = any(key in value for key in source_fields)
+        has_reference = value.get("ref_id") is not None and has_source_data
+        has_marked_document = marker and has_source_data
+        if has_reference or has_marked_document:
+            yield value, marker
+        elif isinstance(value.get("documents"), list):
+            for document in value["documents"]:
+                if isinstance(document, Mapping) and any(key in document for key in source_fields):
+                    yield document, marker
+        elif isinstance(value.get("content"), list):
+            yield from _knowledge_reference_records(value["content"], marker)
+        elif value.get("type") == "text" and isinstance(value.get("text"), str):
+            yield from _knowledge_reference_records(value["text"], marker)
+        elif isinstance(value.get("result"), (Mapping, list, str)):
+            yield from _knowledge_reference_records(value["result"], marker)
+
+
+def _document_source(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Merges the JSON fields that the MCP tool serializes inside a document's content."""
+    source = _as_dict(record.get("sourceData")) or dict(record)
+    content = source.get("content")
+    if isinstance(content, str) and content.lstrip().startswith("{"):
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, Mapping):
+            source = {**parsed, **{key: value for key, value in source.items() if key != "content"}}
+    if str(source.get("title") or "").startswith("http"):
+        source.pop("title")
+    return source
+
+
+def _citation_title(title: str) -> str:
+    return unquote(title.rstrip("/").split("/")[-1]) if title.startswith("http") else title
+
+
+def _knowledge_references(output: Any, call_number: int) -> list[dict[str, Any]]:
+    references = []
+    for record, marker in _knowledge_reference_records(output):
+        source = _document_source(record)
+        raw = {
+            "id": record.get("ref_id") if record.get("ref_id") is not None else record.get("id"),
+            "type": record.get("kind"),
+            "blobUrl": source.get("blob_url") or source.get("blobUrl"),
+            "url": source.get("url") or source.get("web_url") or record.get("uri"),
+            "sourceData": source,
+            "docKey": source.get("uid") or source.get("document_id") or marker,
+        }
+        reference = summarize_references({"references": [raw]})[0]
+        reference["knowledge_source"] = record.get("knowledgeSourceName") or source.get("knowledgeSourceName")
+        reference["tool_call"] = call_number
+        if marker:
+            reference["marker"] = marker
+        references.append(reference)
+    return references
+
+
+def _utf16_length(text: str) -> int:
+    return len(text.encode("utf-16-le", errors="surrogatepass")) // 2
+
+
 def summarize_agent_output(response: Any) -> dict[str, Any]:
     """Extracts answer, tool calls and citations from a Responses API result (any tool type)."""
     data = _as_dict(response)
     answer_parts: list[str] = []
+    answer_length = 0
     tool_calls: list[dict[str, Any]] = []
-    citations: dict[str, dict[str, Any]] = {}
+    citations: list[dict[str, Any]] = []
+    citation_indices: dict[tuple[str, str], int] = {}
+    citation_spans: list[dict[str, int]] = []
+    references: list[dict[str, Any]] = []
     for item in data.get("output") or []:
         item = _as_dict(item)
         kind = item.get("type") or ""
         if kind == "message":
             for content in item.get("content") or []:
                 content = _as_dict(content)
-                if content.get("text"):
-                    answer_parts.append(content["text"])
+                text = content.get("text")
+                offset = None
+                if isinstance(text, str) and text:
+                    offset = answer_length + (1 if answer_parts else 0)
+                    answer_parts.append(text)
+                    answer_length = offset + _utf16_length(text)
                 for note in content.get("annotations") or []:
                     note = _as_dict(note)
-                    key = note.get("url") or note.get("title") or note.get("file_id")
-                    if key and key not in citations:
-                        citations[key] = {"title": note.get("title") or key, "url": note.get("url"), "type": note.get("type")}
-        elif kind.endswith("_call") or kind == "mcp_list_tools":
+                    key = note.get("url") or note.get("file_id") or note.get("filename") or note.get("title")
+                    if not isinstance(key, str) or not key:
+                        continue
+                    identity = (str(note.get("type") or ""), key)
+                    if identity not in citation_indices:
+                        citation_indices[identity] = len(citations)
+                        citations.append({"title": note.get("title") or note.get("filename") or key,
+                                          "url": note.get("url"), "type": note.get("type")})
+                    start, end = note.get("start_index"), note.get("end_index")
+                    if offset is not None and type(start) is int and type(end) is int and 0 <= start < end <= len(text):
+                        citation_spans.append({
+                            "start": offset + _utf16_length(text[:start]),
+                            "end": offset + _utf16_length(text[:end]),
+                            "citation_index": citation_indices[identity],
+                        })
+                    elif offset is not None and note.get("type") == "file_citation":
+                        index = note.get("index")
+                        if type(index) is int and 0 <= index <= len(text):
+                            position = offset + _utf16_length(text[:index])
+                            citation_spans.append({
+                                "start": position, "end": position, "citation_index": citation_indices[identity],
+                            })
+        elif kind.endswith("_call"):
             action = _as_dict(item.get("action"))
             tool_calls.append({
-                "type": kind,
+                "id": item.get("id"), "type": kind,
                 "name": item.get("name") or item.get("server_label") or kind.removesuffix("_call"),
                 "server": item.get("server_label"),
                 "arguments": _short(item.get("arguments") or action.get("query") or action.get("queries")),
                 "status": item.get("status"),
                 "error": _short(item.get("error")),
             })
+            if kind == "mcp_call" and item.get("name") == "knowledge_base_retrieve":
+                references.extend(_knowledge_references(item.get("output"), len(tool_calls)))
     usage = _as_dict(data.get("usage"))
     return {
         "answer": "\n".join(answer_parts) or data.get("output_text") or "",
-        "tool_calls": [t for t in tool_calls if t["type"] != "mcp_list_tools"],
-        "citations": list(citations.values()),
+        "tool_calls": tool_calls,
+        "citations": citations,
+        "citation_spans": citation_spans,
+        "references": references,
         "usage": {k: usage.get(k) for k in ("input_tokens", "output_tokens", "total_tokens") if usage.get(k) is not None},
     }
 
@@ -451,7 +1045,10 @@ async def require_app_service_login(request: Request, call_next):
             )
         if not request.headers.get("x-ms-client-principal-id"):
             return JSONResponse(status_code=401, content={"detail": "Accesso richiesto."})
-    return await call_next(request)
+    response = await call_next(request)
+    if request.url.path == "/api/config":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/healthz")
@@ -470,6 +1067,7 @@ def config(request: Request) -> dict[str, Any]:
         "user_source": user["source"],
         "user_token_available": bool(user["token"]),
         "running_on_app_service": RUNNING_ON_APP_SERVICE,
+        "user_profile": user.get("profile"),
         "knowledge_bases": [
             {
                 "id": key,
@@ -482,11 +1080,12 @@ def config(request: Request) -> dict[str, Any]:
         ],
         "agents": [{"name": name, **info} for name, info in AGENTS.items()],
         "agents_available": bool(PROJECT_ENDPOINT),
+        "chat_deployment": CHAT_DEPLOYMENT,
     }
 
 
 @app.post("/api/agent-chat")
-def agent_chat(body: AgentChatRequest) -> dict[str, Any]:
+def agent_chat(body: AgentChatRequest):
     """Runs the conversation on a Foundry prompt agent (project identity: no per-user ACL)."""
     if body.agent not in AGENTS:
         raise HTTPException(status_code=400, detail="Agente sconosciuto.")
@@ -495,6 +1094,8 @@ def agent_chat(body: AgentChatRequest) -> dict[str, Any]:
     if not PROJECT_ENDPOINT:
         raise HTTPException(status_code=500, detail="Configurazione mancante: FOUNDRYIQ_DEMO_PROJECT_ENDPOINT.")
     started = time.perf_counter()
+    if body.stream:
+        return streaming_response(stream_agent(body, started))
     try:
         response = agents_client().responses.create(
             input=[{"role": m.role, "content": m.content} for m in body.messages],
@@ -502,16 +1103,11 @@ def agent_chat(body: AgentChatRequest) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001 - surfaced in the comparison card
         raise HTTPException(status_code=502, detail=f"Agente {body.agent}: {str(exc)[:800]}") from exc
-    return {
-        "agent": body.agent,
-        **AGENTS[body.agent],
-        **summarize_agent_output(response),
-        "elapsed_ms": round((time.perf_counter() - started) * 1000),
-    }
+    return agent_result(body, response, started)
 
 
 @app.post("/api/chat")
-def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
+def chat(body: ChatRequest, request: Request):
     kb = KNOWLEDGE_BASES.get(body.knowledge_base)
     if kb is None:
         raise HTTPException(status_code=400, detail="Knowledge base sconosciuta.")
@@ -544,8 +1140,11 @@ def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
             user_token = user["token"]
 
     started = time.perf_counter()
+    if body.stream:
+        return streaming_response(stream_chat(body, kb, user_token, started))
     result = retrieve(kb, body.messages, user_token)
-    answer = synthesize(body.messages, extracted_text(result))
+    extracted = extracted_text(result)
+    answer = synthesize(body.messages, extracted)
     activity = summarize_activity(result)
     return {
         "answer": answer,
@@ -554,18 +1153,36 @@ def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
         "references": summarize_references(result),
         "sources": summarize_sources(activity),
         "activity": activity,
+        "retrieval_usage": retrieval_usage(activity),
         "elapsed_ms": round((time.perf_counter() - started) * 1000),
+        "execution": {
+            "identity": "Managed identity della web app" if RUNNING_ON_APP_SERVICE else "Credenziale Azure locale",
+            "user_token_forwarded": bool(user_token),
+            "acl_requested": body.use_acl,
+            "remote_sharepoint": bool(kb.get("remote_sharepoint")),
+            "synthesis_performed": extracted.strip() not in ("", "[]", "{}"),
+            "chat_deployment": CHAT_DEPLOYMENT,
+        },
     }
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets", check_dir=False), name="assets")
 
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    if not (FRONTEND_DIR / "index.html").is_file():
+        raise HTTPException(status_code=503, detail="Frontend non compilato: esegui npm ci e npm run build in webapp-chat/frontend.")
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.get("/trace")
 def trace() -> FileResponse:
-    return FileResponse(STATIC_DIR / "trace.html")
+    return index()
+
+
+@app.get("/demo/multi-fonte")
+@app.get("/demo/acl")
+@app.get("/demo/agenti")
+def demo_page() -> FileResponse:
+    return index()

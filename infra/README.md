@@ -2,6 +2,8 @@
 
 I template Bicep sono suddivisi in moduli e gli hook di **Azure Developer CLI (`azd`)** automatizzano i passaggi prima e dopo il deployment. Gli stessi moduli e script funzionano anche senza azd (vedi [Deployment](#deployment)); per prerequisiti mancanti o fasi non riuscite, segui [Ripresa dopo un errore](#ripresa-dopo-un-errore). Le risorse possono generare costi; usa solo dati sintetici.
 
+Per mostrare gli scenari senza dipendere dalla connettività in sala, usa la [guida del presentatore e i video offline](../docs/demo-guide.md). La riproduzione degli MP4 locali non richiede risorse Azure; una nuova registrazione esegue invece query reali e può generare costi.
+
 ![Ciclo azd up](../docs/images/azd-lifecycle.png)
 
 ## Risorse
@@ -10,7 +12,7 @@ I template Bicep sono suddivisi in moduli e gli hook di **Azure Developer CLI (`
 flowchart TB
     subgraph RG[Resource group]
         subgraph Foundry["Microsoft Foundry"]
-            PRJ[Progetto wpc-foundryiq-demo]
+            PRJ[Progetto wpc-foundry-iq-demo]
             M1[gpt-5-mini]
             M2[text-embedding-3-large]
             M3[gpt-5.2]
@@ -44,7 +46,7 @@ flowchart TB
 | [search.bicep](modules/search.bicep) | Azure AI Search con identità gestita, autenticazione Entra. |
 | [storage.bicep](modules/storage.bicep) | Storage account e container `machinespecs` (no accesso anonimo, no shared key). |
 | [storage-acl.bicep](modules/storage-acl.bicep) | Storage account ADLS Gen2 (namespace gerarchico) e container `acl-docs` per la demo ACL. |
-| [foundry.bicep](modules/foundry.bicep) | Risorsa Microsoft Foundry (`AIServices`, S0), progetto `wpc-foundryiq-demo`, deployment `gpt-5-mini` (Data Zone Standard), `text-embedding-3-large` (Standard) e `gpt-5.2` (Global Standard), connessioni a Search e Application Insights. |
+| [foundry.bicep](modules/foundry.bicep) | Risorsa Microsoft Foundry (`AIServices`, S0), progetto `wpc-foundry-iq-demo`, deployment `gpt-5-mini` (Data Zone Standard), `text-embedding-3-large` (Standard) e `gpt-5.2` (Global Standard), connessioni a Search e Application Insights. |
 | [role-assignments.bicep](modules/role-assignments.bicep) | Ruoli per l'utente demo, l'identità del progetto Foundry e l'identità di Search. |
 | [sql.bicep](modules/sql.bicep) | Azure SQL server con autenticazione solo Entra e database `ricambi` con l'**offerta gratuita** (serverless GP Gen5, 32 GB, sospensione automatica a quota esaurita). |
 | [appservice.bicep](modules/appservice.bicep) | Piano App Service Linux (**B1** di default) e Web App Python 3.12 del server MCP `mcp-ricambi`, con identità gestita che legge il database SQL; integrazione VNet quando SQL è privato. |
@@ -52,13 +54,14 @@ flowchart TB
 | [mcp-identity.bicep](modules/mcp-identity.bicep) | Solo con `SQL_PRIVATE_ENDPOINT=true`: identità gestita assegnata dall'utente del server MCP, amministratore Entra del server SQL. |
 | [webapp-chat.bicep](modules/webapp-chat.bicep) | Web App Python 3.12 della [chat Foundry IQ](../webapp-chat/) sullo stesso piano, con identità gestita di sistema e identità gestita assegnata dall'utente usata come federated credential del login Entra. |
 | [webapp-chat-roles.bicep](modules/webapp-chat-roles.bicep) | *Search Index Data Reader* su Search, *Cognitive Services OpenAI User* e *Azure AI User* sulla risorsa Foundry per l'identità della chat web app (l'ultimo serve a invocare gli agenti). |
-| [demo-config.bicep](modules/demo-config.bicep) | Deployment `wpc-foundryiq-demo` nel resource group con gli output letti dal notebook (`demoConfig`, `foundryAccountName`, `foundryProjectName`). |
+| [demo-config.bicep](modules/demo-config.bicep) | Deployment `wpc-foundry-iq-demo` nel resource group con gli output letti dal notebook (`demoConfig`, `foundryAccountName`, `foundryProjectName`). |
 
 Le risorse usano Microsoft Entra ID: nessuna chiave Azure negli output. L'unico segreto è la `MCP_API_KEY` del server MCP, generata dall'hook e salvata nell'ambiente azd (`.azure/<env>/.env`, escluso da Git) e come app setting della Web App. In un ambiente non demo spostala in Key Vault.
 
 ## Prerequisiti
 
 - [Azure Developer CLI](https://aka.ms/azd-install), [Azure CLI](https://aka.ms/azcli), PowerShell 7 (`pwsh`) e Python 3.10 o successivo.
+- Node.js 20.19.x oppure 22.12 o successivo, con npm, per compilare il frontend della chat durante il packaging.
 - Sottoscrizione con quota per i tre modelli nella regione scelta (default `swedencentral`).
 - Permessi per creare il resource group, distribuire le risorse e assegnare ruoli (per esempio **Contributor** e **Role Based Access Control Administrator**). L'utente demo non deve essere Owner.
 - Login interattivo di un utente: l'utente autenticato diventa utente demo e, con `SQL_PRIVATE_ENDPOINT=false`, amministratore Entra del server SQL.
@@ -66,13 +69,14 @@ Le risorse usano Microsoft Entra ID: nessuna chiave Azure negli output. L'unico 
 
 ## Deployment
 
-Tre modi per ottenere lo stesso ambiente:
+Quattro modi per ottenere lo stesso ambiente:
 
 | Opzione | Quando usarla | Strumenti |
 |---|---|---|
 | **A. azd** (consigliata) | Deployment completo e ripetibile con un solo comando. | `azd up`: Bicep + hook pre/post automatici. |
 | **B1. Script + Bicep + script** | azd non disponibile o non ammesso (pipeline esistenti, policy aziendali). | [deploy_noazd.ps1](../scripts/deploy_noazd.ps1): stesse fasi di azd con Azure CLI (`az deployment sub create`, zip deploy) e gli stessi script degli hook, riprendibile da qualsiasi fase. |
 | **B2. Creazione manuale** | Per capire o mostrare ogni oggetto, o adattarlo a risorse esistenti. | Portale Azure e portale Foundry, con i moduli Bicep come specifica. |
+| **B3. Notebook Jupyter** | Per eseguire e ispezionare ogni passaggio in modo interattivo da VS Code o Jupyter. | [notebooks/deploy](../notebooks/README.md#sequenza-di-deploy-notebooksdeploy) (`01` → `02` → `03`) con Azure CLI, Bicep e SDK Python. |
 
 ### Opzione A: azd
 
@@ -157,7 +161,7 @@ Stessi moduli Bicep e stessi script degli hook, orchestrati da Azure CLI con [de
 az login --tenant <tenant-id>
 
 # Opzionale: stesse variabili di main.parameters.json, salvate al primo avvio
-$env:APP_SERVICE_SKU = 'B1'; $env:SQL_PRIVATE_ENDPOINT = 'true'; $env:CHAT_CAPACITY = '100'
+$env:APP_SERVICE_SKU = 'B1'; $env:SQL_PRIVATE_ENDPOINT = 'true'; $env:CHAT_CAPACITY = '200'
 
 # Tutte le fasi (resource group: rg-wpc-foundryiq)
 ./scripts/deploy_noazd.ps1 -EnvironmentName wpc-foundryiq -Location swedencentral -SubscriptionId <subscription-id>
@@ -192,9 +196,15 @@ Utile in workshop o per riusare risorse esistenti. I moduli in [modules](modules
    - Azure SQL Database con offerta gratuita e amministratore Microsoft Entra (identità gestita assegnata dall'utente della Web App MCP, [mcp-identity.bicep](modules/mcp-identity.bicep)); con le policy che disabilitano l'accesso pubblico servono VNet, private endpoint e integrazione VNet della Web App ([sql.bicep](modules/sql.bicep), [network.bicep](modules/network.bicep));
    - piano App Service Linux B1 con due Web App Python 3.12 (`mcp-ricambi` e `webapp-chat`), con le app setting e il comando di avvio dei moduli [appservice.bicep](modules/appservice.bicep) e [webapp-chat.bicep](modules/webapp-chat.bicep).
 2. **Ruoli RBAC**: assegna all'utente demo, all'identità di Search, al progetto Foundry e alle Web App i ruoli dei moduli [role-assignments.bicep](modules/role-assignments.bicep) e [webapp-chat-roles.bicep](modules/webapp-chat-roles.bicep).
-3. **Dati e codice**: carica `data/machinespecs` nel container Blob, i PDF di `data/sharepoint/policies` su SharePoint e pubblica le due cartelle sulle Web App (Deployment Center o zip deploy come nell'opzione B1). Il server MCP crea lo schema SQL e carica il catalogo al primo avvio.
+3. **Dati e codice**: carica `data/machinespecs` nel container Blob, i PDF di `data/sharepoint/policies/EN` e `IT` nelle rispettive sottocartelle SharePoint e pubblica le due cartelle sulle Web App (Deployment Center o zip deploy come nell'opzione B1). Il server MCP crea lo schema SQL e carica il catalogo al primo avvio.
 4. **Foundry IQ** (portale Foundry, *Knowledge*): crea le knowledge source e le knowledge base della tabella qui sotto, con le stesse descrizioni; per `ricambi-magazzino-ks` usa l'URL `/mcp` della Web App, l'header `x-api-key` e al massimo 5 tool.
 5. **Connessioni e agenti** (portale Foundry): crea le connessioni `wpc-foundryiq-kb-mcp` e `mcp-ricambi-key` descritte sotto, poi gli agenti con istruzioni e tool dei file in [agents](../agents/README.md).
+
+### Opzione B3: notebook Jupyter di deploy
+
+I tre notebook in [notebooks/deploy](../notebooks/README.md#sequenza-di-deploy-notebooksdeploy) eseguono le stesse operazioni direttamente in celle Python (`01-infrastruttura.ipynb` → `02-dati-identita-app.ipynb` → `03-foundry-iq-agenti.ipynb`), leggendo la configurazione dagli output del deployment ARM `wpc-foundryiq-<ambiente>` senza file di stato locali. I prerequisiti e i notebook di verifica per scenario sono descritti in [notebooks/README.md](../notebooks/README.md).
+
+Con `LOAD_AZD_ENV = True` nella prima cella, [notebook_env.py](../scripts/notebook_env.py) precompila subscription, ambiente e nome del deployment dai valori azd; nel notebook 01 anche regione/resource group e nel 03 i nomi KB/URL policy. `AZD_ENVIRONMENT_NAME = ""` usa l'ambiente selezionato, un nome esplicito non cambia la selezione azd. Il flag è disattivato per default e non attiva `RUN_DEPLOY`: parametri Bicep e operazioni restano espliciti. Se il deployment ARM creato da azd ha un nome diverso da quello calcolato, indica il nome effettivo in `DEPLOYMENT_NAME`.
 
 ## Ripresa dopo un errore
 
@@ -227,6 +237,7 @@ flowchart LR
     KS1[machinespecs-ks<br/>azureBlob] --> KB1{{wpc-foundryiq-kb}}
     KS2[ricambi-magazzino-ks<br/>mcpServer] --> KB1
     KS3[policies-sharepoint-ks<br/>remoteSharePoint] -.opzionale.-> KB1
+    KS6[policies-sharepoint-indexed-ks<br/>indexedSharePoint] -.opzionale.-> KB1
     KS4[bing-filtered-ks<br/>web] --> KB1
     KS5[acl-docs-ks<br/>azureBlob ADLS Gen2] -.opzionale.-> KB2{{wpc-acl-kb}}
     KB1 --> C1[connessione<br/>wpc-foundryiq-kb-mcp]
@@ -238,8 +249,9 @@ flowchart LR
 | `machinespecs-ks` | Knowledge source `azureBlob` | Descrizione: manuali tecnici delle macchine. Legge il container `machinespecs`, indicizzato con `text-embedding-3-large`. |
 | `ricambi-magazzino-ks` | Knowledge source `mcpServer` | Descrizione: ricerca ricambi, disponibilità, alternative, ordini aperti e articoli sotto scorta. Interroga i tool MCP in tempo reale. |
 | `policies-sharepoint-ks` | Knowledge source `remoteSharePoint` | Descrizione: policy aziendali per i tecnici. Cartella `policies`, filtrata per `Path`, interrogata in tempo reale con l'identità dell'utente. Creata solo se `setup_sharepoint.ps1` è riuscito. |
+| `policies-sharepoint-indexed-ks` | Knowledge source `indexedSharePoint` | Policy nella cartella `policies` e sottocartelle EN/IT, importate in Search con `text-embedding-3-large` e ACL `userIds, groupIds`. Creata se è configurata `SHAREPOINT_INDEXED_CONNECTION_STRING`, senza sostituire la sorgente remota. |
 | `bing-filtered-ks` | Knowledge source `web` | Descrizione: ricerca web Bing per informazioni aggiornate sui ricambi. Limitata ai domini in `FOUNDRYIQ_BING_ALLOWED_DOMAINS`. |
-| `wpc-foundryiq-kb` | Knowledge base | Descrizione: assistente tecnici WPC con manuali, magazzino, policy e ricerca web filtrata. Combina le sorgenti disponibili, con pianificazione query `gpt-5-mini`, reasoning effort `low` e `retrievalInstructions` definite nello script. |
+| `wpc-foundryiq-kb` | Knowledge base | Descrizione: assistente tecnici WPC con manuali, magazzino, policy e ricerca web filtrata. Combina le sorgenti disponibili, con modello chat completions `gpt-5.2`, reasoning effort `low` e `retrievalInstructions` definite nello script. |
 | `acl-docs-ks` | Knowledge source `azureBlob` (ADLS Gen2) | Descrizione: documenti interni con permessi per documento. Importa le ACL POSIX (`ingestionPermissionOptions: userIds, groupIds`). Creata solo se la demo ACL è stata preparata. |
 | `wpc-acl-kb` | Knowledge base | Demo ACL: contiene solo `acl-docs-ks`, reasoning effort `minimal`, per osservare il filtro dei permessi. |
 
@@ -272,7 +284,25 @@ Le variabili che servono agli agenti arrivano dall'hook Foundry IQ (`FOUNDRYIQ_D
 
 Gli agenti nativi di azd (`host: azure.ai.agent`) supportano solo agenti hosted o con harness gestito: per questo i Prompt Agent sono creati dall'hook.
 
-La sorgente SharePoint usa la Microsoft 365 Copilot Retrieval API con il token delegato dell'utente: la chat lo inoltra nella modalità **Con ACL**. Nella modalità **Agenti RAG vs IQ** la chat usa invece l'identità del progetto senza inoltrare un token utente, quindi SharePoint di norma non restituisce risultati. Licenze e risoluzione dei problemi sono nella [guida SharePoint](../data/sharepoint/foundry-iq-sharepoint-remote-knowledge-source.md).
+La sorgente SharePoint **remota** usa la Microsoft 365 Copilot Retrieval API con il token delegato dell'utente: la chat tenta di inoltrarlo anche in **Senza ACL** sulla KB multi-fonte, perché SharePoint applica comunque i propri permessi. Nella modalità **Agenti RAG vs IQ** la chat usa invece il contesto del progetto senza inoltrare un token utente, quindi SharePoint di norma non restituisce risultati. Licenze e risoluzione dei problemi sono nella [guida SharePoint](../data/sharepoint/foundry-iq-sharepoint-remote-knowledge-source.md).
+
+### SharePoint indexed
+
+Per aggiungere anche `policies-sharepoint-indexed-ks`, configura un'app Entra per l'ingestion con **application permissions** e consenso amministrativo, separata dall'accesso Graph delegato usato per caricare i PDF. Per i file con ACL di utenti/gruppi Entra servono Microsoft Graph `Files.Read.All` e `Sites.FullControl.All` oppure `Sites.Selected` con grant esplicito sui siti. Segui i [prerequisiti dell'indexer](https://learn.microsoft.com/azure/search/search-how-to-index-sharepoint-online) e la [matrice dei permessi ACL](https://learn.microsoft.com/azure/search/search-indexer-sharepoint-access-control-lists#permissions-by-acl-scenario).
+
+Il postprovision esegue `scripts/setup_sharepoint_indexed.ps1`, che automatizza questa configurazione: crea l'app `wpc-foundryiq-sp-ingestion-<env>`, concede `Files.Read.All` e `Sites.FullControl.All` (serve Global Administrator o Privileged Role Administrator), aggiunge la credenziale federata con l'identità system-assigned di Search e salva `SHAREPOINT_INDEXED_CONNECTION_STRING`; il postdeploy crea poi la knowledge source. Se il consenso non riesce, un amministratore può concederlo dal portale Entra e poi rilanciare lo script. Una connessione impostata a mano non viene sovrascritta; `SKIP_SHAREPOINT_INDEXED_SETUP=true` salta il passo.
+
+Per configurarla manualmente imposta `SHAREPOINT_INDEXED_CONNECTION_STRING` nell'ambiente e riesegui `scripts/setup_foundry_iq.ps1` dopo aver caricato la configurazione con `scripts/load_env.ps1`. Il formato secretless raccomandato, con credenziale federata che attesta l'identità gestita **system-assigned di Search**, è:
+
+```text
+SharePointOnlineEndpoint=https://<tenant>.sharepoint.com/sites/wpc-foundry-iq-demo;ApplicationId=<client-id-app-ingestion>;FederatedCredentialApplicationId=<client-id-managed-identity-search>;TenantId=<tenant-id-sharepoint>
+```
+
+Per il solo scenario Graph con utenti/gruppi Entra è supportato anche `ApplicationSecret=<secret>` al posto di `FederatedCredentialApplicationId`. Non salvare segreti in file versionati, notebook o output condivisi. Non usare l'app pubblica di login Graph come app di ingestion.
+
+Lo script usa `containerName: useQuery` e `includeFolder=<SHAREPOINT_POLICIES_URL>` per non importare il resto del sito; puoi specificare una selezione diversa con `SHAREPOINT_INDEXED_QUERY`. Senza URL della cartella né query esplicita il setup fallisce prima di modificare Search. La sorgente remota resta disponibile; le retrieval instructions distinguono ricerca live e contenuti indicizzati, evitando duplicazioni.
+
+L'indicizzazione genera datasource, skillset, indice e indexer; la creazione della sorgente non prova che l'ingestion sia completata. Verifica lo stato dell'indexer in Search e prova utenti autorizzati/non autorizzati. Per default l'indexer della knowledge source viene eseguito ogni 24 ore: contenuti e ACL non sono verificati live. Lo script importa `userIds`/`groupIds`, senza rimuovere i permessi per rendere i dati accessibili agli agenti. Per l'enforcement il client deve fornire il token utente in `x-ms-query-source-authorization`; senza tale contesto i documenti protetti non sono disponibili. I gruppi nativi SharePoint richiedono anche credenziale federata, permessi SharePoint e configurazione `sharePointConnectorAppRegistration` sul servizio Search: il solo setup della knowledge source non la configura.
 
 ## Demo ACL (permessi per documento)
 
@@ -286,9 +316,13 @@ La sorgente SharePoint usa la Microsoft 365 Copilot Retrieval API con il token d
 | `manutenzione-riservata/` | Tecnici |
 | `direzione-riservata/` | Direzione |
 
-Il notebook [acl-demo.ipynb](../acl-demo.ipynb) interroga `wpc-acl-kb` in quattro modi: senza identità utente (nessun documento), come utente corrente (pubblico e manutenzione), dopo l'aggiunta al gruppo *Direzione* (anche il documento della direzione, senza reindicizzare), e opzionalmente come secondo utente con device code. Per riusare gruppi esistenti imposta `FOUNDRYIQ_ACL_GROUP_TECNICI_ID` e `FOUNDRYIQ_ACL_GROUP_DIREZIONE_ID` prima di `azd provision`. Serve il permesso di creare gruppi in Entra ID (consentito agli utenti per default, salvo restrizioni del tenant).
+Il notebook [demo-acl.ipynb](../notebooks/demo/demo-acl.ipynb) legge per default l'ambiente azd selezionato; con `CONFIG_SOURCE = "arm"` usa gli output del deployment ARM indicato in `DEPLOYMENT_NAME`, come quello creato dai notebook in [notebooks/deploy](../notebooks/deploy/). Interroga la KB ACL senza e con il token sorgente dell'utente corrente, confrontando i documenti con l'appartenenza reale a Tecnici/Direzione e le ACL ADLS, senza cambiare gruppi. Il precedente [acl-demo.ipynb](../acl-demo.ipynb) resta un esempio legacy con cambio di appartenenza. Per riusare gruppi esistenti imposta `FOUNDRYIQ_ACL_GROUP_TECNICI_ID` e `FOUNDRYIQ_ACL_GROUP_DIREZIONE_ID` prima di `azd provision`. Serve il permesso di creare gruppi in Entra ID (consentito agli utenti per default, salvo restrizioni del tenant).
 
 All'utente demo viene assegnato *Storage Blob Data Owner* sull'account ACL per caricare i file e impostare le ACL. Non aggira il filtro, perché la knowledge source importa solo `userIds`/`groupIds` e non `rbacScope`. L'agente Foundry collegato con l'identità gestita del progetto non porta l'identità dell'utente: per l'enforcement end-to-end il client deve inoltrare il token utente nell'header `x-ms-query-source-authorization`.
+
+[![Confronto ACL acquisito con query reali](../docs/images/chat-acl.png)](../docs/images/chat-acl.png)
+
+Il [video ACL](../docs/videos/demo-acl.mp4) conserva una sessione locale con Azure CLI: mostra richieste effettive, non prova tutti i profili utente né il login Easy Auth. Non attribuire automaticamente un risultato vuoto al filtro ACL.
 
 ## Variabili dell'ambiente azd
 
@@ -298,7 +332,7 @@ Imposta i valori con `azd env set <NOME> <valore>` prima di `azd up` o `azd prov
 |---|---|---|
 | `AZURE_LOCATION` | `swedencentral` | Regione di Search, Storage, Foundry e App Service. |
 | `AZURE_RESOURCE_GROUP` | `rg-<nome ambiente>` | Resource group da creare o riusare. |
-| `CHAT_CAPACITY` / `EMBEDDING_CAPACITY` / `GPT52_CAPACITY` | `100` / `10` / `100` | Capacità (K TPM) dei deployment dei modelli. |
+| `CHAT_CAPACITY` / `EMBEDDING_CAPACITY` / `GPT52_CAPACITY` | `200` / `20` / `200` | Capacità (K TPM) dei deployment dei modelli. |
 | `APP_SERVICE_SKU` | `B1` | SKU del piano App Service: `F1` (gratuito, senza Always On, avvio lento), `B1`, `B2`, `B3`, `S1`, `P0v3`. |
 | `SQL_PRIVATE_ENDPOINT` | `true` | SQL senza accesso pubblico, raggiungibile solo tramite private endpoint (richiesto dalle policy che impongono `publicNetworkAccess=Disabled`). Il server MCP carica i dati da solo (`SQL_AUTO_SEED`). Richiede uno SKU App Service diverso da `F1`; private endpoint e traffico possono comportare costi variabili. Con `false` SQL è pubblico con firewall e il `postprovision` carica i dati dalla macchina locale. |
 | `SQL_LOCATION` | regione principale | Regione del server SQL, se la regione principale non accetta nuovi server SQL. |
@@ -312,8 +346,11 @@ Imposta i valori con `azd env set <NOME> <valore>` prima di `azd up` o `azd prov
 | `FOUNDRYIQ_ACL_GROUP_TECNICI_ID` / `FOUNDRYIQ_ACL_GROUP_DIREZIONE_ID` | creati dall'hook | Object ID di gruppi Entra esistenti da usare per la demo ACL. |
 | `SKIP_CHAT_AUTH_SETUP` | `false` | `true` per non creare l'app registration e il login Entra della chat web app (serve il permesso di creare app registration; l'admin consent è facoltativo). In questo caso la chat resta bloccata (HTTP 401). |
 | `CHAT_APP_CLIENT_ID` | impostata da `setup_chat_auth.ps1` | Client ID dell'app registration della chat. Con questo valore i provisioning successivi applicano il login completo direttamente da Bicep. |
-| `SHAREPOINT_SITE_URL` | `https://<tenant>.sharepoint.com/sites/wpc-foundryiq-demo` | Sito da usare; se non esiste viene creato come communication site. Dopo il primo run contiene l'URL effettivo. |
+| `SHAREPOINT_SITE_URL` | `https://<tenant>.sharepoint.com/sites/wpc-foundry-iq-demo` | Sito da usare; se non esiste viene creato come communication site. Dopo il primo run contiene l'URL effettivo. |
 | `SHAREPOINT_FOLDER` | `policies` | Cartella della raccolta documenti predefinita in cui caricare i PDF. |
+| `SHAREPOINT_INDEXED_CONNECTION_STRING` | _(creata da `setup_sharepoint_indexed.ps1`)_ | Connessione dell'app di ingestion per aggiungere `policies-sharepoint-indexed-ks` con ACL. Preferire credenziale federata dell'identità system-assigned Search; l'accesso Graph delegato per l'upload non basta. `SKIP_SHAREPOINT_SETUP=true` salta anche questa sorgente. |
+| `SKIP_SHAREPOINT_INDEXED_SETUP` | `false` | `true` non crea l'app di ingestion né la connessione per la sorgente SharePoint indexed. |
+| `SHAREPOINT_INDEXED_QUERY` | `includeFolder=<SHAREPOINT_POLICIES_URL>` | Selezione dei contenuti per l'indexer (`useQuery`), distinta dal filtro KQL della sorgente remota. Obbligatoria se manca l'URL della cartella. |
 | `SHAREPOINT_USE_DEVICE_CODE` | `false` | `true` per accedere a Microsoft Graph con device code invece del browser. |
 | `SHAREPOINT_GRAPH_AUTH` | _(modulo)_ | `rest` per non usare il modulo `Microsoft.Graph.Authentication` e accedere a Graph via OAuth + REST. Si attiva da solo se il modulo non è installabile (es. PowerShell Gallery bloccata dal proxy aziendale). |
 
