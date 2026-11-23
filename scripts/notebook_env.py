@@ -56,14 +56,47 @@ def read_azd_values(environment_name: str = "", *, root: Path | None = None) -> 
     return selected
 
 
-def load_azd_env(
-    environment_name: str = "", *, root: Path | None = None, override: bool = False,
-) -> dict[str, str]:
-    """Load safe settings into this process; return the effective values, without printing them."""
-    values = read_azd_values(environment_name, root=root)
+def read_env_file(path: str | Path) -> dict[str, str]:
+    """Read the safe settings (AZD_KEYS) from a KEY=VALUE file, e.g. notebooks/demo/.env."""
+    path = Path(path)
+    if not path.is_file():
+        raise RuntimeError(
+            f"File {path} non trovato: generalo con notebooks/demo/New-NotebookEnv.ps1."
+        )
+    selected: dict[str, str] = {}
+    for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep or not key.isidentifier():
+            # Never echo the line: it may contain a value.
+            raise RuntimeError(f"Riga {number} non valida in {path.name}: atteso CHIAVE=valore.")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key in AZD_KEYS:
+            selected[key] = value
+    return selected
+
+
+def _apply(values: dict[str, str], override: bool) -> dict[str, str]:
     loaded: dict[str, str] = {}
     for key, value in values.items():
         if override or key not in os.environ:
             os.environ[key] = value
         loaded[key] = os.environ[key]
     return loaded
+
+
+def load_azd_env(
+    environment_name: str = "", *, root: Path | None = None, override: bool = False,
+) -> dict[str, str]:
+    """Load safe settings into this process; return the effective values, without printing them."""
+    return _apply(read_azd_values(environment_name, root=root), override)
+
+
+def load_env_file(path: str | Path, *, override: bool = False) -> dict[str, str]:
+    """Load safe settings from a .env file into this process, like load_azd_env."""
+    return _apply(read_env_file(path), override)

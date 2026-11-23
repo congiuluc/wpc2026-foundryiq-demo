@@ -28,7 +28,7 @@ export function safeText(value: unknown): string {
   return String(value ?? "")
     .replace(/\bBearer\s+\S+/gi, "Bearer [omesso]")
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[token omesso]")
-    .replace(/((?:access_token|refresh_token|id_token|api[_-]?key|authorization|secret|password|sig)\s*["']?\s*[:=]\s*["']?)[^\s"',;&}]+/gi, "$1[omesso]")
+    .replace(/((?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|authorization|secret|password|sig)\s*["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s"',;&}]+)/gi, "$1[omesso]")
     .replace(/https?:\/\/[^\s<>"']+/gi, (text) => {
       try {
         const url = new URL(text);
@@ -48,11 +48,39 @@ function pick(value: unknown, keys: string[]): Picked {
     .map((key) => [key, typeof record[key] === "string" ? safeText(record[key]) : record[key] as Scalar]));
 }
 
+function safeValue(value: unknown): unknown {
+  if (typeof value === "string") return safeText(value);
+  if (Array.isArray(value)) return value.map(safeValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key, /^(?:authorization|proxy-authorization|x-ms-token.*|.*(?:api[_-]?key|secret|password)|(?:access|refresh|id)[_-]?token|token|sig)$/i.test(key)
+        ? "[omesso]" : safeValue(item),
+    ]));
+  }
+  return value;
+}
+
+function safeArguments(value: string): string {
+  try { return JSON.stringify(safeValue(JSON.parse(value))); }
+  catch { return safeText(value); }
+}
+
 function traceReference(ref: Reference, missingId: string) {
+  const call = ref.mcp_call;
   return {
     marker: ref.marker ? safeText(ref.marker) : ref.id == null ? missingId : `Rif. ${safeText(ref.id)}`, document: safeText(ref.title || ref.id || "Riferimento"),
     url: safeText(ref.url || ref.path), uid: null, page: null, snippet: "",
-    extra: pick(ref, ["type", "knowledge_source", "knowledge_source_type", "activity_source", "tool_call", "score", "path"]),
+    extra: {
+      ...pick(ref, ["type", "knowledge_source", "knowledge_source_type", "activity_source", "tool_call", "tool_call_id",
+        "score", "path", "mcp_tool", "elapsed_ms", "result_count", "mcp_started_at", "mcp_completed_at", "mcp_status", "mcp_warning"]),
+      ...(ref.mcp_arguments != null ? { mcp_arguments: safeValue(ref.mcp_arguments) } : {}),
+      ...(ref.mcp_error != null ? { mcp_error: safeValue(ref.mcp_error) } : {}),
+      ...(call ? { mcp_call: {
+        ...pick(call, ["id", "type", "name", "server", "status", "result_count", "started_ms", "completed_ms", "duration_ms"]),
+        ...(call.arguments != null ? { arguments: safeArguments(call.arguments) } : {}),
+        ...(call.error ? { error: safeText(call.error) } : {}),
+      } } : {}),
+    },
   };
 }
 
@@ -108,7 +136,9 @@ export function createCollector(): TraceCollector {
           "remote_sharepoint", "synthesis_performed", "chat_deployment"]),
         activity: (result.activity || []).map((item) => ({
           ...pick(item, ["id", "type", "knowledgeSourceName", "count", "elapsedMs", "query", "status",
-            "startedAt", "completedAt", "started_ms", "completed_ms", "duration_ms", "inputTokens", "outputTokens"]),
+            "startedAt", "completedAt", "started_ms", "completed_ms", "duration_ms", "inputTokens", "outputTokens",
+            "mcp_tool", "tool_call_id", "tool_call"]),
+          ...(item.mcp_arguments != null ? { mcp_arguments: safeValue(item.mcp_arguments) } : {}),
           ...(item.error ? { error: "Errore restituito dal servizio" } : {}),
         })),
         sources: (result.sources || []).map((item) => pick(item, ["name", "type", "queries", "results"])),
@@ -124,8 +154,8 @@ export function createCollector(): TraceCollector {
       request.parts = [
         metadata,
         ...(result.tool_calls || []).map((call) => ({ type: "tool_call",
-          ...pick(call, ["id", "name", "server", "status", "started_ms", "completed_ms", "duration_ms"]), tool_type: safeText(call.type),
-          ...(call.arguments ? { arguments: safeText(call.arguments) } : {}),
+          ...pick(call, ["id", "name", "server", "status", "result_count", "started_ms", "completed_ms", "duration_ms"]), tool_type: safeText(call.type),
+          ...(call.arguments ? { arguments: safeArguments(call.arguments) } : {}),
           ...(call.error ? { error: safeText(call.error) } : {}) })),
         { type: "retrieved_sources", sources: [
           ...(result.references || []).map((ref) => traceReference(ref, "Riferimento senza ID")),

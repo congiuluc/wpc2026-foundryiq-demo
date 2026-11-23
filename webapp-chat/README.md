@@ -33,7 +33,7 @@ Il menu principale nella top bar raccoglie **Chat** (con sottomenu a discesa per
 
 Nelle prime due pagine si può cambiare modalità ACL, ma la knowledge base resta fissata allo scenario; nella terza sono selezionabili solo gli agenti. `?mode=noacl`, `?mode=acl` e `?mode=compare` possono impostare la modalità iniziale delle prime due pagine; parametri non compatibili e `?kb=` non cambiano lo scenario della route. La chat generale `/` e i suoi link esistenti restano disponibili. Aprire un'altra route o ricaricare la pagina avvia una nuova conversazione e azzera la trace corrente.
 
-Nelle modalità **Senza ACL**, **Con ACL** e **Confronto ACL**, la striscia **Fonti interrogate** mostra le knowledge source indicate nell'attività di Foundry IQ, con nome, icona del tipo e numero di risultati. Le fonti senza risultati sono tratteggiate, quelle in errore sono rosse; il dettaglio è nel tooltip. Ogni riferimento mostra anche il nome e l'icona della sua knowledge source quando `activitySource` lo collega a un'attività con nome; altrimenti è indicato che la fonte non è disponibile. Per le knowledge source `mcpServer` il riferimento riporta anche la chiamata al server MCP fatta da Foundry IQ: nome del tool, argomenti, numero di risultati e durata (da `mcpServerArguments` e dall'attività collegata); le chiamate senza risultati non producono riferimenti e restano visibili solo nell'attività. Il nome della source è il testo alternativo e il tooltip dell'icona. Sotto si trova l'attività Foundry IQ (pianificazione delle query e sorgenti interrogate). La risposta finale è sintetizzata dal deployment `gpt-5-mini` usando solo i contenuti estratti.
+Nelle modalità **Senza ACL**, **Con ACL** e **Confronto ACL**, la striscia **Fonti interrogate** mostra le knowledge source indicate nell'attività di Foundry IQ, con nome, icona del tipo e numero di risultati. Le fonti senza risultati sono tratteggiate, quelle in errore sono rosse; il dettaglio è nel tooltip. Ogni riferimento mostra il nome e l'icona della sua knowledge source quando `activitySource` lo collega a un'attività non ambigua. Per una fonte `mcpServer` la scheda riporta tool, argomenti, conteggio, durata, date, stato, errori e avvisi disponibili nell'attività. Le attività MCP senza riferimenti compaiono separatamente sotto **Riferimenti**, senza diventare citazioni. Il conteggio della fonte è quello restituito da Foundry IQ dopo il reranking. La risposta finale è sintetizzata dal deployment `gpt-5-mini` usando solo i contenuti estratti.
 
 Nelle risposte retrieve, `[0]` e `[ref_id:0]` collegano il riferimento con lo stesso ID nella propria scheda. Nel confronto agenti, le annotazioni con posizioni valide diventano pulsanti `[C1]`, mentre i riferimenti restituiti dal tool sono elencati separatamente: possono essere stati recuperati senza essere stati citati. Un `[ref_id:0]` si collega solo a un ID non ambiguo; un semplice `[0]` non viene associato automaticamente a un riferimento MCP, perché potrebbe indicare una citazione diversa.
 
@@ -49,9 +49,9 @@ La definizione locale dell'agente Foundry IQ richiede di citare i `ref_id` effet
 
 *Fotogramma della stessa registrazione: MCP ricambi, Blob e SharePoint indexed. Non dimostra l'uso della sorgente remota o di Bing in quella query.*
 
-Nel confronto **Agenti RAG vs IQ**, l'output MCP dell'agente non espone necessariamente l'attività e i riferimenti della `retrieve`: se i nomi delle knowledge source non sono disponibili, la scheda lo indica senza dedurli dai tool o dalle citazioni.
+Nel confronto **Agenti RAG vs IQ**, i riferimenti restituiti da `knowledge_base_retrieve` mostrano la chiamata MCP dell'agente e, se presente nell'output, anche l'attività MCP interna della fonte. Le altre chiamate MCP, comprese quelle dirette al magazzino e quelle senza riferimenti, sono elencate separatamente. Una citazione non viene collegata a un tool per somiglianza del titolo; i dati che il provider non espone restano non disponibili. L'output grezzo completo dei tool non è incluso nelle schede o nella Trace corrente.
 
-Ogni scheda del confronto separa **chiamate tool**, **tempo totale** (secondi, con millisecondi esatti sotto) e **token totali** in tre riquadri KPI affiancati con icone vettoriali. I token di **input** e **output** sono indicati separatamente insieme a una barra proporzionale; i numeri seguono la formattazione italiana. Il riepilogo **Tool invocati in questa risposta** raggruppa le chiamate osservate per tipo, server e nome, con conteggi ed errori: non rappresenta il numero di tool configurati nell'agente. **Dettaglio delle chiamate** mostra ogni chiamata numerata, stato, server e argomenti disponibili. Dati mancanti sono segnalati come non disponibili, non come zero; il tempo è quello complessivo della richiesta, non la durata dei singoli tool.
+Ogni scheda del confronto separa **chiamate tool**, **tempo totale** (secondi, con millisecondi esatti sotto) e **token totali** in tre riquadri KPI affiancati con icone vettoriali. I token di **input** e **output** sono indicati separatamente insieme a una barra proporzionale; i numeri seguono la formattazione italiana. Il riepilogo **Tool invocati in questa risposta** raggruppa le chiamate osservate per tipo, server e nome, con conteggi ed errori: non rappresenta il numero di tool configurati nell'agente. **Dettaglio delle chiamate** mostra ogni chiamata numerata, stato, server e argomenti disponibili. I conteggi MCP sono mostrati solo se esplicitamente restituiti; i dati mancanti non diventano zero. La durata della singola chiamata è misurata dalla chat solo se lo stream ne ha mostrato inizio e fine.
 
 [![Confronto Agenti RAG vs Foundry IQ con KPI a 3 colonne e telemetria tool](../docs/images/chat-agenti.png)](../docs/images/chat-agenti.png)
 
@@ -61,15 +61,36 @@ L'interfaccia usa il design system **Foundry IQ Knowledge Studio**: tema chiaro 
 
 ### Profilo e gruppi dell'utente
 
-Il pulsante dell'utente nell'header apre il profilo: nome, account, ID Entra, tenant, origine dell'autenticazione, disponibilità e scadenza del token Search. I gruppi vengono letti dai claim di Easy Auth / ID token (in locale dal token Azure CLI), senza inviare token al browser o interrogare Microsoft Graph. I ruoli applicativi sono mostrati separatamente: non sono gruppi.
+Il pulsante dell'utente nell'header apre il profilo: nome, account, ID Entra, tenant, origine dell'autenticazione, disponibilità e scadenza del token Search. I gruppi vengono letti dai claim di Easy Auth / ID token (in locale dal token Azure CLI). All'apertura del profilo l'app rilegge i claim e cerca i nomi in Microsoft Graph **solo per gli Object ID presenti**, mostrando comunque gli ID; i token non vengono inviati al browser. Se la ricerca è incompleta o non disponibile, il profilo indica l'errore e conserva gli ID. Se nel frattempo cambia l'ID utente o tenant, chiede di ricaricare la pagina. I ruoli applicativi sono mostrati separatamente: non sono gruppi.
 
-I valori dei gruppi sono normalmente Object ID; l'app non ne risolve i nomi. Un claim mancante è indicato come **non disponibile**, non come assenza di appartenenze. In caso di *group overage* l'elenco è segnalato come incompleto: per completarlo servirebbe una lettura Graph dedicata con le relative autorizzazioni. Il token Search non è valido per Graph.
+Un claim mancante è indicato come **non disponibile**, non come assenza di appartenenze. In caso di *group overage* l'elenco è segnalato come incompleto: l'app non cerca le altre appartenenze in Graph. Il token Search non è valido per Graph; la risoluzione dei nomi usa un token distinto e non modifica il controllo ACL.
 
 [![Profilo della sessione con dati personali e ID oscurati](../docs/images/chat-profilo.png)](../docs/images/chat-profilo.png)
 
 *Disponibilità del token e stato dei claim osservati nella sessione locale; nome, account e identificatori sono oscurati solo nell'acquisizione, senza modificare autenticazione o risposte.*
 
-`scripts/setup_chat_auth.ps1` abilita `groupMembershipClaims=SecurityGroup` nell'app registration della chat. Per un'app già configurata riesegui lo script e fai logout/login per aggiornare l'ID token. Non aggiunge permessi Graph; il token usato per le query Search e l'applicazione delle ACL restano invariati. I claim mostrati sono informativi e possono non rappresentare tutte le appartenenze della directory.
+`scripts/setup_chat_auth.ps1` abilita `groupMembershipClaims=SecurityGroup` nell'app registration della chat. Per un'app già configurata riesegui lo script e fai logout/login per aggiornare l'ID token. Non assegna il permesso Graph descritto sotto. I claim mostrati sono informativi e possono non rappresentare tutte le appartenenze della directory.
+
+Su App Service i nomi richiedono il permesso **applicativo** Microsoft Graph `Group.ReadBasic.All` sull'**identità gestita di sistema** della web app (non sull'identità assegnata dall'utente usata per il login). Il permesso consente la lettura delle proprietà di base di tutti i gruppi del tenant, anche se l'app interroga solo gli ID dei claim; richiede un amministratore e non viene concesso automaticamente. Un amministratore con i privilegi necessari può assegnarlo una volta, usando Azure CLI e i moduli PowerShell `Microsoft.Graph.Authentication` e `Microsoft.Graph.Applications`:
+
+```powershell
+$resourceGroup = '<resource-group-della-chat>'
+$webAppName = '<nome-web-app-chat>'
+$tenantId = az account show --query tenantId -o tsv
+$managedId = az webapp identity show --resource-group $resourceGroup --name $webAppName --query principalId -o tsv
+if (-not $tenantId -or -not $managedId) { throw 'Tenant o identità gestita di sistema non trovati.' }
+Connect-MgGraph -TenantId $tenantId -Scopes 'AppRoleAssignment.ReadWrite.All', 'Application.Read.All'
+$graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'" -Property Id,AppRoles
+$role = @($graph.AppRoles | Where-Object { $_.Value -eq 'Group.ReadBasic.All' -and $_.AllowedMemberTypes -contains 'Application' })
+if (-not $graph.Id -or $role.Count -ne 1) { throw 'Service principal o ruolo Microsoft Graph non trovato.' }
+$existing = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $managedId -All |
+  Where-Object { $_.ResourceId -eq $graph.Id -and $_.AppRoleId -eq $role[0].Id }
+if (-not $existing) {
+  New-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $graph.Id -PrincipalId $managedId -ResourceId $graph.Id -AppRoleId $role[0].Id
+}
+```
+
+La propagazione del ruolo può richiedere tempo per la cache dei token dell'identità gestita. In locale, invece, Graph usa l'identità di Azure CLI e i suoi **permessi delegati**: l'assegnazione alla managed identity non abilita automaticamente la risoluzione locale. Per la lettura dei gruppi, anche i permessi delegati e la visibilità dell'utente devono essere adeguati. Vedi [assegnazione dei ruoli a una managed identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/assign-app-role-managed-identity-powershell) e [lettura di un gruppo con Graph](https://learn.microsoft.com/graph/api/group-get?view=graph-rest-1.0).
 
 ### Infografiche di architettura e query
 
@@ -146,6 +167,8 @@ La pagina `/trace` (link *Trace* nell'header) mostra in modo leggibile i messagg
 
 L'analisi avviene solo nel browser: il trace non viene inviato al server.
 
+Durante l'elaborazione, nelle modalità retrieve (**Senza ACL**, **Con ACL**, **Confronto ACL**) ogni risposta mostra gli **Eventi in tempo reale** in una console affiancata al testo, con tempi, fasi e dettagli aggiornati dallo stream. Nei riquadri stretti la console passa sotto il testo. Lo scorrimento segue i nuovi eventi finché non si scorre verso l'alto per leggere quelli precedenti. Al termine, anche in caso di errore, il riepilogo eventi resta espandibile dopo la risposta e prima dei riferimenti. Nel confronto **Agenti RAG vs IQ** gli eventi restano in cima alla scheda, sopra KPI e risposta.
+
 **Visualizza trace corrente**, nei controlli della Chat, apre una finestra di dialogo nella stessa pagina, senza nuove schede. La trace si aggiorna mentre arrivano le risposte, comprese richieste in corso ed errori; confronti ACL e agenti restano distinti e nell'ordine di avvio. La dialog offre le stesse viste e gli stessi filtri della pagina `/trace`, oltre al JSON della conversazione corrente. **Nuova chat**, cambio modalità/KB e ricaricamento della Chat azzerano la raccolta. Non recupera retroattivamente risposte precedenti al caricamento del codice.
 
 Sono mostrati risposta, attività retrieval, tool/stati osservati, riferimenti/citazioni, tempo totale, conteggi token e metadati ACL disponibili; non è la trace interna completa di Foundry. Non si inventano output tool, snippet o decisioni ACL per documento. La sezione **Metadati della risposta** presenta in tabelle leggibili (con il JSON espandibile):
@@ -157,7 +180,7 @@ Sono mostrati risposta, attività retrieval, tool/stati osservati, riferimenti/c
 
 Il grafico usa i tempi relativi misurati dall'app alla ricezione degli eventi di avvio e completamento, non gli span interni del servizio. Le fasi rappresentano l'intervallo tra il primo e l'ultimo evento osservato, non la durata esatta del modello; se manca un evento, la durata non viene inventata. Durante lo streaming la barra della richiesta arriva all'ultimo evento osservato; file senza tempi mostrano i dati come non disponibili.
 
-Ogni `tool_call` include argomenti e durata quando l'avvio e il completamento sono stati osservati nello stream; ogni riferimento riporta tipo e nome della knowledge source, percorso SharePoint e punteggio del reranker se presenti. Configurazione utente, header e claim non sono inclusi; credenziali, token riconoscibili e query/fragment degli URL sono oscurati anche nelle query e negli argomenti. Nessun local/session storage: chiudere la dialog conserva la trace nella chat, mentre chiudere o ricaricare la pagina elimina i dati. La pagina `/trace` resta disponibile per analizzare trace incollate o caricate manualmente. Prima di condividere qualsiasi trace, verifica i contenuti di domande, query e risposte.
+Ogni `tool_call` include argomenti e durata quando l'avvio e il completamento sono stati osservati nello stream; i riferimenti includono anche i metadati MCP e gli argomenti disponibili. Configurazione utente, header e claim non sono inclusi; credenziali, token riconoscibili e query/fragment degli URL sono oscurati anche negli argomenti strutturati. Nessun local/session storage: chiudere la dialog conserva la trace nella chat, mentre chiudere o ricaricare la pagina elimina i dati. La pagina `/trace` resta disponibile per analizzare trace incollate o caricate manualmente. Prima di condividere qualsiasi trace, verifica i contenuti di domande, query e risposte.
 
 [![Trace corrente della query multi-fonte nella vista Cronologia](../docs/images/trace-esempio.png)](../docs/images/trace-esempio.png)
 
@@ -194,7 +217,7 @@ Ogni scheda include **Eventi in tempo reale**, aperto durante la risposta e rich
 - per Foundry IQ: richiesta retrieve e identità usata, `retrieval.started`, avvio e completamento di ogni attività (risultati, tempo e token), riferimenti risolti (`references.completed`), risultati parziali 206, riepilogo del retrieval, inizio della sintesi, primo token, token di generazione;
 - per gli agenti: esecuzione avviata, tool MCP disponibili, ragionamento, inizio e fine di ogni chiamata tool, riferimenti restituiti da `knowledge_base_retrieve`, citazioni man mano che vengono annotate, riepilogo finale, eventuale retry ed errori.
 
-Riferimenti e citazioni compaiono nella scheda appena arrivano; il risultato completato li sostituisce con i valori definitivi. Sono mostrati solo eventi effettivamente ricevuti dal servizio. Query e argomenti dei tool sono visibili nella scheda e vengono copiati anche nella Trace corrente, con credenziali e query string degli URL oscurate. Gli eventi `tool` e le attività Foundry IQ con ID includono, quando osservabili, `started_ms`, `completed_ms` e `duration_ms` misurati dall'app sullo stream.
+Riferimenti e citazioni compaiono nella scheda appena arrivano; il risultato completato conserva anche i dati osservati nello stream quando mancano nella risposta finale, riconciliando le chiamate tramite ID. Sono mostrati solo eventi effettivamente ricevuti dal servizio. Query e argomenti dei tool sono visibili nella scheda e vengono copiati anche nella Trace corrente, con credenziali e query string degli URL oscurate. Nella scheda gli argomenti sono invece mostrati come restituiti e possono contenere dati riservati: controllali prima di condividere la schermata. Gli eventi `tool` e le attività Foundry IQ con ID includono, quando osservabili, `started_ms`, `completed_ms` e `duration_ms` misurati dall'app sullo stream.
 
 [![Eventi in tempo reale nella risposta multi-fonte](../docs/images/chat-timeline.png)](../docs/images/chat-timeline.png)
 
@@ -212,21 +235,22 @@ Il companion script [capture_demo_media.py](../scripts/capture_demo_media.py) ri
 
 ## Query di prova multi-fonte
 
-Queste domande richiedono più knowledge source della KB demo; la striscia *Fonti interrogate* mostra quali sono state usate. Le prime sei sono gli esempi della home (`Alt+1` … `Alt+6`).
+Queste domande richiedono più knowledge source della KB demo; la striscia *Fonti interrogate* mostra quali sono state usate. Le prime sette sono gli esempi della home (`Alt+1` … `Alt+7`). L'ordine è condiviso dalle modalità retrieval e dal confronto agenti.
 
 Tutte le query sono disponibili nella sidebar collassabile **Query di test** a destra della chat (sempre nascosta di default all'avvio; si espande dalla linguetta laterale `‹ Test` sul bordo destro, dal pulsante **Query di test** nella top bar o con `Alt+T`, e si richiude con **Comprimi ›**), dotata di contatore di completamento e barra di avanzamento: ogni voce mostra le fonti attese e, per gli esempi ACL, i gruppi attesi (*Tecnici*, *Direzione* o entrambi); un clic invia subito la domanda e le query già eseguite sono segnate con ✓. Il pannello segue la knowledge base selezionata ed è definito in `KNOWLEDGE_BASES` di [app.py](app.py) (`examples` + `extra_tests`).
 
 | # | Domanda | Fonti attese |
 |---|---|---|
-| 1 | Il Rx1 Digital Weave Integration Station ha inceppamenti del tessuto: cosa controllo secondo il manuale, abbiamo un Weave Tension Motor disponibile e le policy dicono di ripararlo o sostituirlo? | Manuali, Ricambi (RX1-WTM-003 sotto scorta; ordine aperto senza alternativa associata), SharePoint (*Repair vs Replace*) |
-| 2 | Devo cambiare le membrane filtranti della Graphene Vapor Reclaim Tank: ogni quanto va fatto, quante GRT-002 abbiamo a magazzino e come vanno smaltite quelle esauste? | Manuali (sostituzione settimanale), Ricambi, SharePoint (*Environmental and Waste Disposal*) |
-| 3 | L'Edge Control Node P4311 non si accende: come verifico l'alimentatore AD-60W-24, ne abbiamo a magazzino o un'alternativa, e quali modelli equivalenti vendono i distributori online? | Manuali (tensione ≥ 22,5 V), Ricambi (AD-60W-24 sotto scorta), Bing, SharePoint (*Edge Equipment Guidelines*) |
-| 4 | Le cartucce d'inchiostro dell'OQTR Digital Printing and Lacing Stand sono esaurite: ogni quanto vanno sostituite, c'è un ricambio alternativo disponibile e come segnalo il fermo al responsabile? | Manuali (sostituzione settimanale), Ricambi (OQTR-IC-004 a zero), SharePoint (*Communication Guidelines*) |
-| 5 | Per la Cutting Blade Assembly CGC-001 del Contoso Robotic Garment Cut-Sew: frequenza di manutenzione, disponibilità e alternative, e regole di sicurezza nel maneggiarla. | Manuali, Ricambi, SharePoint (*Safety Protocols*, *Equipment Handling*) |
-| 6 | Quali ricambi ad alta criticità sono sotto scorta e, per quelli della Delta Nano Circuit Board 3D Printer, cosa prevede il manuale per la manutenzione? | Ricambi (`low_stock_report`), Manuali |
-| 7 | Il Print Bed Heater DS-PBH-004 ha 45 giorni di lead time: ci sono alternative a magazzino o prodotti equivalenti sui cataloghi dei distributori? | Ricambi, Bing |
+| 1 | Il compressore CMP-4324 non parte e la spia CTL11 è rossa: è l'alimentatore? Il cavo ha l'etichetta UL 817, cosa significa? Posso sostituire il pezzo da solo o serve un'approvazione? | Manuali, Ricambi, Bing, SharePoint |
+| 2 | Il Rx1 Digital Weave Integration Station ha inceppamenti del tessuto: cosa controllo secondo il manuale, abbiamo un Weave Tension Motor disponibile e le policy dicono di ripararlo o sostituirlo? | Manuali, Ricambi (RX1-WTM-003 sotto scorta; ordine aperto senza alternativa associata), SharePoint (*Repair vs Replace*) |
+| 3 | Devo cambiare le membrane filtranti della Graphene Vapor Reclaim Tank: ogni quanto va fatto, quante GRT-002 abbiamo a magazzino e come vanno smaltite quelle esauste? | Manuali (sostituzione settimanale), Ricambi, SharePoint (*Environmental and Waste Disposal*) |
+| 4 | L'Edge Control Node P4311 non si accende: come verifico l'alimentatore AD-60W-24, ne abbiamo a magazzino o un'alternativa, e quali modelli equivalenti vendono i distributori online? | Manuali (tensione ≥ 22,5 V), Ricambi (AD-60W-24 sotto scorta), Bing, SharePoint (*Edge Equipment Guidelines*) |
+| 5 | Le cartucce d'inchiostro dell'OQTR Digital Printing and Lacing Stand sono esaurite: ogni quanto vanno sostituite, c'è un ricambio alternativo disponibile e come segnalo il fermo al responsabile? | Manuali (sostituzione settimanale), Ricambi (OQTR-IC-004 a zero), SharePoint (*Communication Guidelines*) |
+| 6 | Per la Cutting Blade Assembly CGC-001 del Contoso Robotic Garment Cut-Sew: frequenza di manutenzione, disponibilità e alternative, e regole di sicurezza nel maneggiarla. | Manuali, Ricambi, SharePoint (*Safety Protocols*, *Equipment Handling*) |
+| 7 | Quali ricambi ad alta criticità sono sotto scorta e, per quelli della Delta Nano Circuit Board 3D Printer, cosa prevede il manuale per la manutenzione? | Ricambi (`low_stock_report`), Manuali |
+| 8 | Il Print Bed Heater DS-PBH-004 ha 45 giorni di lead time: ci sono alternative a magazzino o prodotti equivalenti sui cataloghi dei distributori? | Ricambi, Bing |
 
-Senza SharePoint configurato le domande 1–5 usano solo manuali, ricambi e Bing. Il piano di query lo decide il modello, quindi una fonte attesa può a volte restare vuota (chip tratteggiato): riformula citando esplicitamente il dettaglio mancante.
+Senza SharePoint configurato le domande 1–6 usano solo manuali, ricambi e Bing. Il piano di query lo decide il modello, quindi una fonte attesa può a volte restare vuota (chip tratteggiato): riformula citando esplicitamente il dettaglio mancante.
 
 ## Esecuzione locale
 

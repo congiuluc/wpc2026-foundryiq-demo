@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ActivityIcon, BotIcon, ChevronDownIcon, LayersIcon, LockIcon, MoonIcon, PanelRightIcon, PlusIcon, ShieldIcon, SlidersIcon, SparkIcon, StageIcon, SunIcon, UserIcon } from "./UiIcons";
 import { demoRoutes, demos } from "./routes";
-import type { ChatConfig, Demo } from "./types";
+import { errorMessage, isRecord } from "./types";
+import type { ChatConfig, Demo, GroupNamesResult } from "./types";
 
 const scales = [.8, .9, 1, 1.1, 1.25, 1.4, 1.6];
 const demoIcons: Record<Demo, ReactNode> = {
@@ -140,13 +141,56 @@ export function Dialog({ open, onClose, title, className = "", children, actions
   </dialog>;
 }
 
+type GroupNamesState =
+  | { kind: "idle" | "loading" }
+  | { kind: "loaded"; result: GroupNamesResult }
+  | { kind: "error"; message: string };
+
+function isGroupNamesResult(value: unknown): value is GroupNamesResult {
+  if (!isRecord(value) || !isRecord(value.names) || !Object.values(value.names).every((name) => typeof name === "string")
+    || !Array.isArray(value.groups) || !value.groups.every((group: unknown) => typeof group === "string")
+    || (value.groups_status !== "available" && value.groups_status !== "overage" && value.groups_status !== "unavailable")
+    || (value.object_id !== null && typeof value.object_id !== "string")
+    || (value.tenant_id !== null && typeof value.tenant_id !== "string")) return false;
+  if (value.status === "available") return value.message === null;
+  return (value.status === "partial" || value.status === "unavailable") && typeof value.message === "string" && value.message.trim().length > 0;
+}
+
 export function Profile({ config, open, onClose }: { config: ChatConfig | null; open: boolean; onClose: () => void }) {
   const p = config?.user_profile;
+  const [groupNames, setGroupNames] = useState<GroupNamesState>({ kind: "idle" });
+  useEffect(() => {
+    if (!open || !p) {
+      setGroupNames({ kind: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setGroupNames({ kind: "loading" });
+    fetch("/api/profile/group-names", { signal: controller.signal, cache: "no-store" }).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }).then((data: unknown) => {
+      if (!isGroupNamesResult(data)) throw new Error("risposta non valida");
+      if (controller.signal.aborted) return;
+      if (data.object_id !== (p.object_id ?? null) || data.tenant_id !== (p.tenant_id ?? null)) {
+        setGroupNames({ kind: "error", message: "La sessione è cambiata. Ricarica la pagina per aggiornare il profilo." });
+      } else {
+        setGroupNames({ kind: "loaded", result: data });
+      }
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setGroupNames({ kind: "error", message: `Nomi dei gruppi non disponibili (${errorMessage(error)}). Riapri il profilo per riprovare.` });
+    });
+    return () => controller.abort();
+  }, [open, p]);
+  const resolved = groupNames.kind === "loaded" && groupNames.result.object_id === (p?.object_id ?? null)
+    && groupNames.result.tenant_id === (p?.tenant_id ?? null) ? groupNames.result : null;
+  const groups = resolved?.groups ?? p?.groups ?? [];
+  const groupsStatus = resolved?.groups_status ?? p?.groups_status;
   const expiry = typeof p?.token_expires_on === "number" ? new Intl.DateTimeFormat("it", { dateStyle: "medium", timeStyle: "short" }).format(new Date(p.token_expires_on * 1000)) : "Non disponibile";
   const fields = p && [["Nome", p.display_name], ["Account", p.username || config.user], ["ID utente Entra", p.object_id], ["ID tenant", p.tenant_id], ["Autenticazione", p.source], ["Token Search", config.user_token_available ? "Disponibile" : "Non disponibile"], ["Scadenza token Search", expiry]];
-  const hint = p?.groups_status === "overage" ? "Elenco incompleto: Entra segnala troppi gruppi per il token. Serve una lettura dedicata da Microsoft Graph; questa app non la esegue."
-    : p?.groups_status === "unavailable" ? "Gruppi non disponibili nei claim: non significa che l'utente non appartenga a gruppi."
-      : p?.groups?.length ? "Gruppi riportati nei claim, identificati normalmente da Object ID. I nomi non vengono risolti tramite Graph."
+  const hint = groupsStatus === "overage" ? "Elenco incompleto: Entra segnala troppi gruppi per il token. Vengono risolti solo i gruppi eventualmente presenti nei claim, senza cercare le altre appartenenze."
+    : groupsStatus === "unavailable" ? "Gruppi non disponibili nei claim: non significa che l'utente non appartenga a gruppi."
+      : groups.length ? "Solo i gruppi riportati nei claim. I nomi vengono cercati con Microsoft Graph; gli Object ID restano visibili."
         : "Il claim dei gruppi è presente ma vuoto. Non equivale a una verifica completa nella directory.";
   return <Dialog open={open} onClose={onClose} className="profile-dialog" title="Identità e sessione utente">
     {!p ? <p>Profilo non disponibile: {config?.user_source || "accedi di nuovo"}.</p> : <>
@@ -165,7 +209,13 @@ export function Profile({ config, open, onClose }: { config: ChatConfig | null; 
       <div className="profile-section">
         <h3><ShieldIcon />Gruppi Entra</h3>
         <p className="meta">{hint}</p>
-        {p.groups.length > 0 && <ul className="profile-groups">{p.groups.map((group) => <li key={group}><ShieldIcon /><code>{group}</code></li>)}</ul>}
+        {groupNames.kind === "loading" && <p className="meta" role="status">Verifica dei claim e ricerca dei nomi…</p>}
+        {resolved?.message && <p className="meta" role="status">{resolved.message} Riapri il profilo per riprovare.</p>}
+        {groupNames.kind === "error" && <p className="meta" role="status">{groupNames.message}</p>}
+        {groups.length > 0 && <ul className="profile-groups">{groups.map((group) => {
+          const name = resolved && Object.hasOwn(resolved.names, group) ? resolved.names[group] : null;
+          return <li key={group}><ShieldIcon /><span className="profile-group-text">{name && <strong>{name}</strong>}<code>{group}</code></span></li>;
+        })}</ul>}
       </div>
       {p.roles.length > 0 && <div className="profile-section"><h3><LockIcon />Ruoli applicativi (non gruppi)</h3><ul className="profile-groups">{p.roles.map((role) => <li key={role}><code>{role}</code></li>)}</ul></div>}
       <p className="meta profile-footnote">Dati informativi della sessione: non autorizzano l'accesso ai documenti. Le ACL sono verificate dal servizio con il token utente.</p>

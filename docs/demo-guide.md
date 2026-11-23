@@ -19,6 +19,7 @@ La registrazione locale usa la credenziale Azure del presentatore anche per auto
 |---|---|---|
 | Multi-fonte | [demo-multi-fonte.mp4](videos/demo-multi-fonte.mp4) | Domanda sulle membrane GRT-002 in streaming, eventi in tempo reale, fonti, riferimenti (anche SharePoint), flusso osservato e Trace con tappe e fasi. |
 | ACL | [demo-acl.mp4](videos/demo-acl.mp4) | Stessa domanda con/senza token utente, poi domanda sugli accordi riservati alla Direzione. |
+| ACL, due utenti | [demo-acl-due-utenti.mp4](videos/demo-acl-due-utenti.mp4) | Stessa domanda con il token di due account di test reali: uno nel gruppo Tecnici, uno no. |
 | Agenti | [demo-agenti.mp4](videos/demo-agenti.mp4) | Tre agenti in streaming sulla stessa domanda: eventi, tool con durata, token, tempi e Trace. |
 
 Data di acquisizione, durata e riepilogo delle risposte osservate sono nel [manifest degli asset](videos/manifest.json). Fonti configurate, indicizzazione, permessi e risultati possono cambiare dopo la registrazione; non assumere che tutte le fonti siano state interrogate o abbiano risposto.
@@ -29,6 +30,7 @@ Data di acquisizione, durata e riepilogo delle risposte osservate sono nel [mani
 |---|---|---|
 | Multi-fonte | 103 s | MCP ricambi, manuali Blob e SharePoint **indexed** interrogati, 10 riferimenti finali, risposta in circa 33 s (retrieval completato a 11,8 s, primo token a 30,8 s). Questa query non dimostra l'uso di SharePoint remoto o Bing. |
 | ACL | 86 s | La procedura restituisce un riferimento con token utente e zero senza; la domanda riservata alla Direzione restituisce zero in entrambe le richieste. |
+| ACL, due utenti | 77 s | Modalità Con ACL, token utente inoltrato in entrambe le richieste. Enrico (claim Tecnici) ottiene 1 riferimento a `codici-modalita-service.md` in circa 2,8 s; Claudia (claim senza Tecnici) ottiene 0 riferimenti in circa 0,4 s. |
 | Agenti | 103 s | Tre risposte riuscite. RAG accurato mostra l'avviso di interruzione dello stream del tool e il retry senza streaming (2 chiamate tool); Foundry IQ espone 8 riferimenti e 2 citazioni, i RAG classici nessuna citazione strutturata in questa sessione. |
 
 I tre MP4 occupano complessivamente circa **7,7 MiB**. Il copione sotto è anche la descrizione testuale del percorso per i video senza audio.
@@ -115,6 +117,17 @@ I tre MP4 occupano complessivamente circa **7,7 MiB**. Il copione sotto è anche
 
 [Scarica il video ACL](videos/demo-acl.mp4) · [Confronto della procedura](images/chat-acl.png) · [Domanda riservata](images/chat-acl-riservato.png)
 
+### Variante per la slide: stessa domanda, due utenti
+
+Due account di test reali, ciascuno con il proprio login: Enrico, nel gruppo **Tecnici**, e Claudia, fuori dal gruppo. Entrambi chiedono in modalità **Con ACL** il codice della modalità service del Ven Systems Model 12 (`manutenzione-riservata/codici-modalita-service.md`, solo Tecnici). Nella registrazione Enrico ottiene il documento e Claudia nessun riferimento. Lo zero di Claudia è coerente con le ACL, ma il servizio non espone il motivo del filtro.
+
+<video class="demo-video" controls preload="none" playsinline aria-label="Registrazione della demo ACL con due utenti">
+  <source src="videos/demo-acl-due-utenti.mp4" type="video/mp4">
+  Il browser non supporta la riproduzione video.
+</video>
+
+[Scarica il video ACL con due utenti](videos/demo-acl-due-utenti.mp4)
+
 | Problema | Verifica | Piano di riserva |
 |---|---|---|
 | Token assente o scaduto | Nuovo login nello stesso tenant; in Azure verifica Easy Auth e audience Search. | Video locale della sessione registrata. |
@@ -182,6 +195,13 @@ $env:PLAYWRIGHT_SKIP_BROWSER_GC = '1'
 .\.venv\Scripts\python.exe .\scripts\capture_demo_media.py --base-url http://127.0.0.1:8000
 
 # Pulizia: chiudi solo il server avviato per questa acquisizione con Ctrl+C.
+```
+
+Il video con due utenti usa [capture_acl_two_users.py](../scripts/capture_acl_two_users.py) sull'app pubblicata con Easy Auth. Apre Chrome visibile: accedi tu con i due account, lo script non gestisce password né salva token o cookie su disco. Pubblica il video solo se l'account incluso ottiene almeno un riferimento e l'altro nessuno, e aggiunge l'esito al manifest senza sovrascrivere le altre demo.
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\capture_acl_two_users.py --base-url $env:CHAT_APP_URL `
+  --included-user <utente-tecnici> --excluded-user <utente-non-tecnici>
 ```
 
 `DEMO_CAPTURE_BASE_URL` e `DEMO_CAPTURE_BROWSER_CHANNEL` consentono di impostare URL e canale browser (`chrome` di default). Lo script non aggira login, consenso o autorizzazioni. Una sorgente opzionale vuota o in errore resta documentata nel manifest; un errore HTTP della richiesta o l'assenza di documenti autorizzati nella verifica ACL impedisce la pubblicazione degli asset.

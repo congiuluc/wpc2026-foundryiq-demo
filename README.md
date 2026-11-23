@@ -170,7 +170,7 @@ Scaricali prima della sessione: aprire GitHub Pages richiede ancora la rete. Son
 
 La guida completa è in [notebooks/README.md](notebooks/README.md). I notebook di deploy usano gli output ARM `wpc-foundryiq-<ambiente>`; quelli demo leggono per default l'ambiente azd selezionato e possono invece usare gli output ARM:
 
-Nei tre notebook di deploy puoi impostare `LOAD_AZD_ENV = True` e `AZD_ENVIRONMENT_NAME = ""` nella prima cella per precompilare la configurazione dall'ambiente azd selezionato, oppure indicare un nome esplicito. L'helper [notebook_env.py](scripts/notebook_env.py) carica solo impostazioni non segrete nel kernel; non genera `.env` e non avvia il deploy. I quattro notebook demo/test usano lo stesso helper con `CONFIG_SOURCE = "azd"`; con `"arm"` non chiamano azd.
+Nei tre notebook di deploy puoi impostare `LOAD_AZD_ENV = True` e `AZD_ENVIRONMENT_NAME = ""` nella prima cella per precompilare la configurazione dall'ambiente azd selezionato, oppure indicare un nome esplicito. L'helper [notebook_env.py](scripts/notebook_env.py) carica solo impostazioni non segrete nel kernel; non genera `.env` e non avvia il deploy. I quattro notebook demo/test usano lo stesso helper con `CONFIG_SOURCE = "azd"`; con `"env"` leggono `notebooks/demo/.env`, generato da [New-NotebookEnv.ps1](notebooks/demo/New-NotebookEnv.ps1); con `"arm"` non chiamano azd. Per i file `.http`, [New-HttpEnv.ps1](http/New-HttpEnv.ps1) genera `http/.env` con endpoint e token.
 
 | Notebook | Cosa fa |
 |---|---|

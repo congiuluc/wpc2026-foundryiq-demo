@@ -3,8 +3,11 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+import zipfile
 from collections import UserDict
 from collections.abc import Mapping
+from contextlib import nullcontext
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,7 +18,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "webapp-chat"))
 import notebook_env  # noqa: E402
+from mcp_references import notebook_reference_rows, summarize_agent_output, summarize_references  # noqa: E402
 
 NOTEBOOKS = sorted((ROOT / "notebooks").rglob("*.ipynb"))
 DEMO_NOTEBOOKS = sorted((ROOT / "notebooks" / "demo").glob("*.ipynb"))
@@ -60,6 +65,22 @@ def test_notebooks_are_clean_self_contained_python():
                 assert not re.search(r"""["']azd["']|\bazd (env|up|provision|deploy)\b""", source), path
 
 
+def test_notebook_chat_package_contains_mcp_reference_module(tmp_path, monkeypatch):
+    path = ROOT / "notebooks" / "deploy" / "02-dati-identita-app.ipynb"
+    source = next("".join(c["source"]) for c in code_cells(path) if c["id"] == "02-dati-identita-app-13")
+    tree = ast.parse(source)
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "build_zip")
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+             and node.func.id == "build_zip" and any(keyword.arg == "include" for keyword in node.keywords)]
+    include = ast.literal_eval(next(keyword.value for keyword in calls[0].keywords if keyword.arg == "include"))
+    ns = {"Path": Path, "zipfile": zipfile, "EXCLUDED_DIRS": set(), "EXCLUDED_FILES": set()}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"), ns)
+    monkeypatch.setattr(tempfile, "mkdtemp", lambda: str(tmp_path))
+    archive = ns["build_zip"](ROOT / "webapp-chat", include=include)
+    with zipfile.ZipFile(archive) as package:
+        assert {"app.py", "mcp_references.py", "requirements.txt"} <= set(package.namelist())
+
+
 @pytest.mark.parametrize("connection, folder, query", [
     ("", "https://example.sharepoint.com/policies", ""),
     ("test-connection", "https://example.sharepoint.com/policies", ""),
@@ -100,9 +121,11 @@ def test_deploy_notebook_adds_indexed_sharepoint_with_acl(connection, folder, qu
         exec(compile(cells[cell_id], str(path), "exec"), ns)
     kb = requests["knowledgebases/kb"]
     assert {s["name"] for s in kb["knowledgeSources"]} == (
-        {"blob", "mcp", "web"} | ({"remote"} if folder else set()) | ({"indexed"} if connection else set())
+        {"blob", "mcp", "web"} | ({"indexed"} if connection else set())
     )
     assert ("indexed" in kb["retrievalInstructions"]) is bool(connection)
+    assert "remote" not in kb["retrievalInstructions"]
+    assert ("knowledgesources/remote" in requests) is bool(folder)
     if connection:
         source = requests["knowledgesources/indexed"]
         assert source["kind"] == "indexedSharePoint"
@@ -170,8 +193,10 @@ def demo_bootstrap(path):
         "ROOT": ROOT,
         "Mapping": Mapping,
         "load_azd_env": notebook_env.load_azd_env,
+        "load_env_file": notebook_env.load_env_file,
         "CONFIG_SOURCE": "azd",
         "AZD_ENVIRONMENT_NAME": "",
+        "ENV_FILE": "",
         "SUBSCRIPTION_ID": "",
         "DEPLOYMENT_NAME": "wpc-foundryiq-demo",
     })
@@ -356,6 +381,33 @@ def test_demo_loads_azd_or_explicit_arm_outputs(path):
 
 
 @pytest.mark.parametrize("path", DEMO_NOTEBOOKS, ids=lambda path: path.stem)
+def test_demo_loads_safe_settings_from_env_file(path, tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# commento\nAZURE_ENV_NAME=demo\nAZURE_SUBSCRIPTION_ID=sub\nAZURE_TENANT_ID=tenant\n"
+        "AZURE_RESOURCE_GROUP=rg\nFOUNDRYIQ_DEMO_PROJECT_ENDPOINT=\"https://project\"\n"
+        "MCP_API_KEY=secret\n", encoding="utf-8")
+    environment = {}
+    monkeypatch.setattr(notebook_env.os, "environ", environment)
+    ns = demo_bootstrap(path)
+    ns.update(CONFIG_SOURCE="env", ENV_FILE=str(env_file), az=lambda *args: {"id": "sub", "tenantId": "tenant"})
+    ns["load_azd_values"] = lambda _: pytest.fail("env mode must not read azd")
+    out, _, source = ns["load_configuration"](["FOUNDRYIQ_DEMO_PROJECT_ENDPOINT"])
+    assert out["FOUNDRYIQ_DEMO_PROJECT_ENDPOINT"] == "https://project" and "MCP_API_KEY" not in out
+    assert environment == out and source == f"file {env_file}"
+
+
+def test_notebook_env_file_errors_do_not_leak_values(tmp_path):
+    with pytest.raises(RuntimeError, match="New-NotebookEnv.ps1"):
+        notebook_env.read_env_file(tmp_path / "missing.env")
+    bad = tmp_path / ".env"
+    bad.write_text("AZURE_ENV_NAME=demo\nnot-a-setting do-not-display\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Riga 2") as exc:
+        notebook_env.read_env_file(bad)
+    assert "do-not-display" not in str(exc.value)
+
+
+@pytest.mark.parametrize("path", DEMO_NOTEBOOKS, ids=lambda path: path.stem)
 @pytest.mark.parametrize("failure, message", [
     ("missing-subscription", "AZURE_SUBSCRIPTION_ID"),
     ("subscription-mismatch", "SUBSCRIPTION_ID non corrisponde"),
@@ -413,15 +465,52 @@ def test_agent_helpers_build_every_repository_agent():
 
 
 def test_demo_summaries_group_sources_and_references():
-    ns = tagged_functions(ROOT / "notebooks/demo/demo-multi-fonte.ipynb", "retrieve-helpers", {"json": json, "unquote": unquote})
+    ns = tagged_functions(ROOT / "notebooks/demo/demo-multi-fonte.ipynb", "retrieve-helpers",
+                          {"json": json, "summarize_references": summarize_references, "notebook_reference_rows": notebook_reference_rows})
     result = {"activity": [{"id": 1, "knowledgeSourceName": "ks-blob", "count": 2},
                            {"id": 2, "knowledgeSourceName": "ks-mcp", "count": 1, "error": {"code": "x"}}],
               "references": [{"id": "0", "activitySource": 1, "blobUrl": "https://s/c/manuale%20A.pdf"}]}
     rows = {r["fonte"]: r for r in ns["summarize_sources"](result, {"ks-blob": "azureBlob", "ks-mcp": "mcpServer"})}
     assert rows["ks-blob"]["categoria"] == "Manuali" and rows["ks-blob"]["risultati"] == 2
     assert rows["ks-mcp"]["categoria"] == "Ricambi" and '"code"' in rows["ks-mcp"]["errore"]
-    assert ns["references_by_source"](result)[0] == {"ref_id": "0", "fonte": "ks-blob", "tipo": None,
-                                                    "titolo": "manuale A.pdf", "score": None}
+    reference = ns["references_by_source"](result)[0]
+    assert reference["ref_id"] == "0" and reference["fonte"] == "ks-blob"
+    assert reference["titolo"] == "manuale A.pdf" and reference["score"] is None
+
+
+def test_multi_source_notebook_preserves_linked_mcp_arguments_and_zeroes():
+    ns = tagged_functions(ROOT / "notebooks/demo/demo-multi-fonte.ipynb", "retrieve-helpers",
+                          {"json": json, "summarize_references": summarize_references, "notebook_reference_rows": notebook_reference_rows})
+    arguments = {"query": "pompa" * 100}
+    result = {
+        "activity": [{"id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi",
+                      "mcpServerArguments": {"toolName": "check_stock", "toolArguments": arguments},
+                      "count": 0, "elapsedMs": 0}],
+        "references": [{"id": "0", "type": "mcpServer", "activitySource": 3, "title": "Ricambio"}],
+    }
+    [reference] = ns["references_by_source"](result)
+    assert reference["tool MCP"] == "check_stock"
+    assert reference["argomenti MCP"] == arguments
+    assert reference["risultati MCP"] == 0 and reference["ms MCP"] == 0
+
+
+def test_multi_source_detail_displays_all_mcp_argument_text():
+    import pandas as pd
+
+    path = ROOT / "notebooks" / "demo" / "demo-multi-fonte.ipynb"
+    source = next("".join(c["source"]) for c in code_cells(path) if c["id"] == "demo-multi-fonte-09")
+    argument = "x" * 500
+    detail = {"activity": [{"id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi",
+                            "mcpServerArguments": {"toolName": "check_stock", "toolArguments": {"part": argument}}}],
+              "references": [{"id": "0", "type": "mcpServer", "activitySource": 3, "title": "Ricambio"}]}
+    html = []
+    ns = {"results": [detail], "SCENARIO_DETTAGLIO": 0, "SCENARI": [{"domanda": "Ricambio?"}],
+          "pd": pd, "Markdown": str,
+          "display": lambda value: html.append(value._repr_html_()) if hasattr(value, "_repr_html_") else None,
+          "references_by_source": lambda value: notebook_reference_rows(summarize_references(value))}
+    exec(compile(source, str(path), "exec"), ns)
+    assert len(html) == 2 and all(argument in table for table in html)
+    assert "argomenti MCP" in html[1] and "avviso MCP" in html[1]
 
 
 def test_acl_demo_extracts_only_acl_container_paths():
@@ -533,13 +622,46 @@ def test_agent_inventory_handles_sdk_mappings_and_missing_versions():
 
 
 def test_agent_demo_summarizes_tools_citations_and_tokens():
-    ns = tagged_functions(ROOT / "notebooks/demo/demo-agenti.ipynb", "agent-summary", {"as_dict": lambda v: v or {}})
+    ns = tagged_functions(ROOT / "notebooks/demo/demo-agenti.ipynb", "agent-summary",
+                          {"summarize_agent_output": summarize_agent_output})
     response = {"output": [{"type": "mcp_call", "server_label": "ricambi", "name": "check_stock", "status": "completed"},
                            {"type": "message", "content": [{"text": "Ok [1]", "annotations": [{"url": "u", "title": "Manuale"}]}]}],
                 "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}
     summary = ns["summarize_response"](response)
     assert summary["chiamate"][0]["tipo"] == "MCP" and summary["chiamate"][0]["tool"] == "check_stock"
     assert summary["citazioni"] == ["Manuale"] and summary["token totali"] == 15 and summary["risposta"] == "Ok [1]"
+
+
+def test_agent_notebook_exposes_real_mcp_calls_and_reference_associations():
+    ns = tagged_functions(ROOT / "notebooks/demo/demo-agenti.ipynb", "agent-summary",
+                          {"summarize_agent_output": summarize_agent_output})
+    arguments = json.dumps({"query": "pompa" * 100})
+    response = {"output": [
+        {"id": "stock", "type": "mcp_call", "name": "check_stock", "server_label": "ricambi",
+         "arguments": arguments, "output": '{"count":0,"results":[]}'},
+        {"id": "kb", "type": "mcp_call", "name": "knowledge_base_retrieve", "server_label": "iq",
+         "arguments": '{"query":"manuale"}',
+         "output": json.dumps([{"ref_id": 0, "sourceData": {"title": "Manuale"}}])},
+    ]}
+    summary = ns["summarize_response"](response)
+    assert summary["chiamate"][0]["argomenti"] == arguments
+    assert summary["chiamate"][0]["risultati"] == 0
+    assert summary["riferimenti"][0]["tool_call_id"] == "kb"
+    assert summary["riferimenti"][0]["mcp_call"]["arguments"] == '{"query":"manuale"}'
+    assert summary["citazioni"] == []
+
+
+def test_agent_notebook_exposes_internal_mcp_activity_without_references():
+    ns = tagged_functions(ROOT / "notebooks/demo/demo-agenti.ipynb", "agent-summary",
+                          {"summarize_agent_output": summarize_agent_output})
+    response = {"output": [{"id": "kb", "type": "mcp_call", "name": "knowledge_base_retrieve",
+                            "output": json.dumps({"activity": [{"id": 1, "type": "mcpServer",
+                                "mcpServerArguments": {"toolName": "check_stock", "toolArguments": {"part": "A"}},
+                                "count": 0}], "references": []})}]}
+    summary = ns["summarize_response"](response)
+    assert summary["attività"][0]["mcp_tool"] == "check_stock"
+    assert summary["attività"][0]["mcp_arguments"] == {"part": "A"}
+    assert summary["attività"][0]["count"] == 0
 
 
 @pytest.fixture
@@ -644,9 +766,33 @@ def test_sdk_notebook_displays_references_and_source_errors(sdk_helpers, capsys)
     path = ROOT / "notebooks" / "demo" / "demo-foundry-iq-sdk.ipynb"
     cells = {c["id"]: "".join(c["source"]) for c in code_cells(path)}
     tables = []
-    ns = {"result": result, "pd": SimpleNamespace(DataFrame=lambda rows: rows), "display": tables.append}
+    ns = {"result": result, "summarize_references": summarize_references, "notebook_reference_rows": notebook_reference_rows,
+          "pd": SimpleNamespace(DataFrame=lambda rows: rows, option_context=lambda *args: nullcontext()), "display": tables.append}
     for cell in ("sdk-09", "sdk-10"):
         exec(compile(cells[cell], str(path), "exec"), ns)
     assert "Testo [0]" in capsys.readouterr().out
     assert tables[0][0]["fonte"] == "acl-docs-ks" and tables[0][0]["documento"].endswith("doc.md")
     assert tables[1][0]["errore"] and tables[1][0]["avviso"] == "partial"
+
+
+def test_sdk_notebook_displays_mcp_reference_and_unlinked_activity(sdk_helpers):
+    _, models = sdk_helpers
+    arguments = {"query": "pompa" * 100}
+    result = models.KnowledgeBaseRetrievalResponse({
+        "activity": [
+            {"id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi", "count": 0, "elapsedMs": 0,
+             "mcpServerArguments": {"toolName": "check_stock", "toolArguments": arguments}},
+            {"id": 4, "type": "mcpServer", "knowledgeSourceName": "ricambi", "count": 0,
+             "mcpServerArguments": {"toolName": "other_tool", "toolArguments": {}}},
+        ],
+        "references": [{"id": "0", "type": "mcpServer", "activitySource": 3, "title": "Ricambio"}],
+    })
+    path = ROOT / "notebooks" / "demo" / "demo-foundry-iq-sdk.ipynb"
+    source = next("".join(c["source"]) for c in code_cells(path) if c["id"] == "sdk-10")
+    tables = []
+    ns = {"result": result, "summarize_references": summarize_references, "notebook_reference_rows": notebook_reference_rows,
+          "pd": SimpleNamespace(DataFrame=lambda rows: rows, option_context=lambda *args: nullcontext()), "display": tables.append}
+    exec(compile(source, str(path), "exec"), ns)
+    assert tables[0][0]["tool MCP"] == "check_stock" and tables[0][0]["argomenti MCP"] == arguments
+    assert tables[0][0]["risultati MCP"] == 0 and tables[0][0]["ms MCP"] == 0
+    assert tables[1][1]["tool MCP"] == "other_tool" and tables[1][1]["argomenti MCP"] == {}

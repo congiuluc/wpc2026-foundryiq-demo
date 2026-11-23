@@ -8,9 +8,16 @@ from collections import UserDict
 from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
+import requests
+from azure.core.exceptions import ClientAuthenticationError
 from fastapi.testclient import TestClient
+
+
+GROUP_ONE = "11111111-1111-4111-8111-111111111111"
+GROUP_TWO = "22222222-2222-4222-8222-222222222222"
 
 
 def fake_jwt(**claims):
@@ -41,6 +48,7 @@ def chat_app(monkeypatch):
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
     monkeypatch.setattr(module.tokens, "get", lambda credential, scope: "app-token")
+    monkeypatch.setattr(module.graph_tokens, "get", lambda credential, scope: "app-token")
     calls = []
     module.calls = calls
     module.synthesize_inputs = []
@@ -58,16 +66,21 @@ def signed_in_client(module):
     return TestClient(module.app, headers={"x-ms-client-principal-id": "user-1"})
 
 
-def test_demo_config_exposes_six_examples_without_duplicating_test_queries(chat_app):
+def test_demo_config_exposes_compressor_first_without_duplicating_test_queries(chat_app):
     result = signed_in_client(chat_app).get("/api/config")
 
     assert result.status_code == 200
     demo = next(kb for kb in result.json()["knowledge_bases"] if kb["id"] == "demo")
     example_questions = [example["question"] for example in demo["examples"]]
     test_questions = [example["question"] for example in demo["tests"]]
-    assert len(example_questions) == 6
-    assert len(test_questions) == 7
-    assert test_questions[:6] == example_questions
+    assert len(example_questions) == 7
+    assert len(test_questions) == 8
+    assert test_questions[0] == (
+        "Il compressore CMP-4324 non parte e la spia CTL11 è rossa: è l'alimentatore? "
+        "Il cavo ha l'etichetta UL 817, cosa significa? Posso sostituire il pezzo da solo o serve "
+        "un'approvazione?"
+    )
+    assert test_questions[:7] == example_questions
     assert len(set(test_questions)) == len(test_questions)
 
 
@@ -158,6 +171,287 @@ def test_local_profile_ignores_client_identity_headers(chat_app, monkeypatch):
     assert result.json()["user_profile"]["username"] == "locale@contoso.com"
     assert result.json()["user_profile"]["object_id"] == "local-user"
     assert result.json()["user_profile"]["groups"] == ["local-group"]
+
+
+def test_group_names_are_resolved_on_demand_with_the_managed_identity(chat_app, monkeypatch):
+    managed_identity = object()
+    monkeypatch.setattr(chat_app, "graph_managed_credential", managed_identity, raising=False)
+    token_calls = []
+    graph_calls = []
+
+    def token(credential, scope):
+        token_calls.append((credential, scope))
+        return "graph-secret"
+
+    def graph_batch(url, **kwargs):
+        graph_calls.append((url, kwargs))
+        assert kwargs["headers"]["Authorization"] == "Bearer graph-secret"
+        assert kwargs["allow_redirects"] is False
+        requests_in_batch = kwargs["json"]["requests"]
+        assert [item["url"] for item in requests_in_batch] == [
+            f"/groups/{GROUP_ONE}?$select=id,displayName",
+            f"/groups/{GROUP_TWO}?$select=id,displayName",
+        ]
+        return FakeResponse(200, {"responses": [
+            {"id": requests_in_batch[1]["id"], "status": 200, "body": {"id": GROUP_TWO, "displayName": "Direzione"}},
+            {"id": requests_in_batch[0]["id"], "status": 200, "body": {"id": GROUP_ONE, "displayName": "Tecnici"}},
+        ]})
+
+    monkeypatch.setattr(chat_app.graph_tokens, "get", token)
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    headers = {
+        **user_headers(),
+        "x-ms-token-aad-id-token": fake_jwt(groups=[GROUP_TWO, GROUP_ONE]),
+    }
+    client = signed_in_client(chat_app)
+
+    config = client.get("/api/config", headers=headers)
+    assert config.json()["user_profile"]["groups"] == [GROUP_ONE, GROUP_TWO]
+    assert graph_calls == []
+    assert token_calls == []
+    monkeypatch.setattr(chat_app, "retrieve", lambda *args: kb_response([]))
+    chat = client.post(
+        "/api/chat",
+        headers=headers,
+        json={"knowledge_base": "acl", "messages": [{"role": "user", "content": "q"}], "use_acl": True},
+    )
+    assert chat.status_code == 200
+    assert graph_calls == []
+    assert token_calls == []
+
+    result = client.get("/api/profile/group-names", headers=headers)
+    assert result.status_code == 200
+    assert result.headers["cache-control"] == "no-store"
+    assert result.json() == {
+        "object_id": "user-1",
+        "tenant_id": None,
+        "groups": [GROUP_ONE, GROUP_TWO],
+        "groups_status": "available",
+        "names": {GROUP_ONE: "Tecnici", GROUP_TWO: "Direzione"},
+        "status": "available",
+        "message": None,
+    }
+    assert graph_calls[0][0] == "https://graph.microsoft.com/v1.0/$batch"
+    assert token_calls == [(managed_identity, "https://graph.microsoft.com/.default")]
+    assert "graph-secret" not in result.text
+    assert headers["x-ms-token-aad-id-token"] not in result.text
+
+
+def test_group_names_preserve_partial_results_and_do_not_expand_overage(chat_app, monkeypatch):
+    headers = {
+        **user_headers(),
+        "x-ms-token-aad-id-token": fake_jwt(
+            groups=[GROUP_ONE, GROUP_TWO], _claim_names={"groups": "src1"}
+        ),
+    }
+    requested = []
+
+    def graph_batch(url, **kwargs):
+        requested.extend(kwargs["json"]["requests"])
+        return FakeResponse(200, {"responses": [
+            {"id": requested[0]["id"], "status": 200, "body": {"id": GROUP_ONE, "displayName": "Tecnici"}},
+            {"id": requested[1]["id"], "status": 403, "body": {"error": {"message": "secret from upstream"}}},
+        ]})
+
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    client = signed_in_client(chat_app)
+    config = client.get("/api/config", headers=headers)
+    result = client.get("/api/profile/group-names", headers=headers)
+
+    assert config.json()["user_profile"]["groups_status"] == "overage"
+    assert [item["url"] for item in requested] == [
+        f"/groups/{GROUP_ONE}?$select=id,displayName",
+        f"/groups/{GROUP_TWO}?$select=id,displayName",
+    ]
+    assert result.json()["names"] == {GROUP_ONE: "Tecnici"}
+    assert result.json()["groups"] == [GROUP_ONE, GROUP_TWO]
+    assert result.json()["groups_status"] == "overage"
+    assert result.json()["status"] == "partial"
+    assert "Group.ReadBasic.All" in result.json()["message"]
+    assert "secret from upstream" not in result.text
+
+
+def test_group_names_use_current_claims_if_the_token_changed(chat_app, monkeypatch):
+    def graph_batch(url, **kwargs):
+        requests_in_batch = kwargs["json"]["requests"]
+        assert [item["url"] for item in requests_in_batch] == [f"/groups/{GROUP_TWO}?$select=id,displayName"]
+        return FakeResponse(200, {"responses": [
+            {"id": requests_in_batch[0]["id"], "status": 200, "body": {"id": GROUP_TWO, "displayName": "Direzione"}}
+        ]})
+
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    client = signed_in_client(chat_app)
+    config = client.get("/api/config", headers={
+        **user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=[GROUP_ONE]),
+    })
+    result = client.get("/api/profile/group-names", headers={
+        **user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=[GROUP_TWO], hasgroups=True),
+    })
+
+    assert config.json()["user_profile"]["groups"] == [GROUP_ONE]
+    assert result.json()["groups"] == [GROUP_TWO]
+    assert result.json()["groups_status"] == "overage"
+    assert result.json()["names"] == {GROUP_TWO: "Direzione"}
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("denied", "Group.ReadBasic.All"),
+        ("timeout", "raggiungibile"),
+        ("malformed", "risposta"),
+        ("missing", "risposta"),
+        ("mismatched-id", "risposta"),
+        ("throttled", "limitato"),
+    ],
+)
+def test_group_name_failures_are_explicit_and_never_hide_ids(chat_app, monkeypatch, failure, message):
+    def graph_batch(url, **kwargs):
+        if failure == "denied":
+            return FakeResponse(403, {"error": "details must not be exposed"})
+        if failure == "timeout":
+            raise requests.Timeout("details must not be exposed")
+        if failure == "missing":
+            return FakeResponse(200, {"responses": []})
+        if failure == "mismatched-id":
+            return FakeResponse(200, {"responses": [
+                {"id": "1", "status": 200, "body": {"id": GROUP_TWO, "displayName": "Not this group"}}
+            ]})
+        if failure == "throttled":
+            return FakeResponse(200, {"responses": [{"id": "1", "status": 429}]})
+        return FakeResponse(200, {"unexpected": True})
+
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    headers = {**user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=[GROUP_ONE])}
+    client = signed_in_client(chat_app)
+    result = client.get("/api/profile/group-names", headers=headers)
+
+    assert result.status_code == 200
+    assert result.json()["status"] == "unavailable"
+    assert result.json()["names"] == {}
+    assert message in result.json()["message"]
+    assert "details must not be exposed" not in result.text
+    assert client.get("/api/config", headers=headers).json()["user_profile"]["groups"] == [GROUP_ONE]
+
+
+def test_group_name_resolution_reports_token_failure_without_leaking_it(chat_app, monkeypatch):
+    def unavailable(*args):
+        raise ClientAuthenticationError(message="credential-secret")
+
+    monkeypatch.setattr(chat_app.graph_tokens, "get", unavailable)
+    headers = {**user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=[GROUP_ONE])}
+    result = signed_in_client(chat_app).get("/api/profile/group-names", headers=headers)
+
+    assert result.json()["status"] == "unavailable"
+    assert "token Microsoft Graph" in result.json()["message"]
+    assert "credential-secret" not in result.text
+
+
+def test_group_names_batch_more_than_twenty_claims(chat_app, monkeypatch):
+    groups = [str(UUID(int=index)) for index in range(1, 26)]
+    batches = []
+
+    def graph_batch(url, **kwargs):
+        batch = kwargs["json"]["requests"]
+        batches.append(batch)
+        return FakeResponse(200, {"responses": [
+            {
+                "id": item["id"],
+                "status": 200,
+                "body": {
+                    "id": item["url"].split("/")[2].split("?")[0],
+                    "displayName": f"Group {item['url'].split('/')[2].split('?')[0]}",
+                },
+            }
+            for item in reversed(batch)
+        ]})
+
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    headers = {**user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=groups)}
+    result = signed_in_client(chat_app).get("/api/profile/group-names", headers=headers)
+
+    assert [len(batch) for batch in batches] == [20, 5]
+    assert result.json()["status"] == "available"
+    assert result.json()["names"] == {group: f"Group {group}" for group in groups}
+
+
+def test_group_names_preserve_earlier_batches_after_a_network_failure(chat_app, monkeypatch):
+    groups = [str(UUID(int=index)) for index in range(1, 22)]
+    calls = 0
+
+    def graph_batch(url, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise requests.Timeout("details must not be exposed")
+        return FakeResponse(200, {"responses": [
+            {
+                "id": item["id"],
+                "status": 200,
+                "body": {"id": item["url"].split("/")[2].split("?")[0], "displayName": "Group"},
+            }
+            for item in kwargs["json"]["requests"]
+        ]})
+
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    headers = {**user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=groups)}
+    result = signed_in_client(chat_app).get("/api/profile/group-names", headers=headers)
+
+    assert result.json()["status"] == "partial"
+    assert len(result.json()["names"]) == 20
+    assert groups[-1] not in result.json()["names"]
+    assert "raggiungibile" in result.json()["message"]
+
+
+@pytest.mark.parametrize("groups", [[], ["../../users"]])
+def test_empty_or_invalid_claim_group_ids_never_reach_graph(chat_app, monkeypatch, groups):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Graph or its token must not be requested")
+
+    monkeypatch.setattr(chat_app.requests, "post", unexpected)
+    monkeypatch.setattr(chat_app.tokens, "get", unexpected)
+    monkeypatch.setattr(chat_app.graph_tokens, "get", unexpected)
+    headers = {**user_headers(), "x-ms-token-aad-id-token": fake_jwt(groups=groups)}
+    result = signed_in_client(chat_app).get("/api/profile/group-names", headers=headers)
+
+    assert result.status_code == 200
+    assert result.json()["names"] == {}
+    assert result.json()["status"] == ("unavailable" if groups else "available")
+    if groups:
+        assert "ID" in result.json()["message"]
+
+
+def test_local_group_names_use_the_cli_graph_token(chat_app, monkeypatch):
+    cli_credential = object()
+    monkeypatch.setattr(chat_app, "RUNNING_ON_APP_SERVICE", False)
+    monkeypatch.setattr(chat_app, "local_user_credential", cli_credential)
+    calls = []
+
+    def token(credential, scope):
+        calls.append((credential, scope))
+        if scope == "https://search.azure.com/.default":
+            return fake_jwt(aud="https://search.azure.com", oid="local-user", groups=[GROUP_ONE])
+        return "local-graph-token"
+
+    def graph_batch(url, **kwargs):
+        assert kwargs["headers"]["Authorization"] == "Bearer local-graph-token"
+        item = kwargs["json"]["requests"][0]
+        return FakeResponse(200, {"responses": [
+            {"id": item["id"], "status": 200, "body": {"id": GROUP_ONE, "displayName": "Tecnici"}}
+        ]})
+
+    monkeypatch.setattr(chat_app.tokens, "get", token)
+    monkeypatch.setattr(chat_app.graph_tokens, "get", token)
+    monkeypatch.setattr(chat_app.requests, "post", graph_batch)
+    result = TestClient(chat_app.app).get("/api/profile/group-names", headers={
+        "x-ms-client-principal": "invalid",
+    })
+
+    assert result.json()["names"] == {GROUP_ONE: "Tecnici"}
+    assert calls == [
+        (cli_credential, "https://search.azure.com/.default"),
+        (cli_credential, "https://graph.microsoft.com/.default"),
+    ]
 
 
 def user_headers(expires_in=3600, aud="https://search.azure.com"):
@@ -370,6 +664,8 @@ def test_stream_agent_streams_tool_arguments_references_and_citations(chat_app, 
     assert references["append"] is True
     assert references["items"][0]["title"] == "Manuale pompa"
     assert references["items"][0]["tool_call"] == 1
+    assert references["items"][0]["tool_call_id"] == "tool-1"
+    assert references["items"][0]["mcp_call"]["arguments"] == '{"queries":["pompa"]}'
     assert next(data for name, data in output_events if name == "citation")["title"] == "Manuale pompa"
     done_tool = [data for name, data in output_events if name == "tool"][-1]
     assert done_tool["arguments"] == '{"queries":["pompa"]}'
@@ -380,6 +676,89 @@ def test_stream_agent_streams_tool_arguments_references_and_citations(chat_app, 
     args_log = next(data for name, data in output_events if name == "log" and data["title"] == "Argomenti inviati al tool")
     assert args_log["private"] is True
     assert any(name == "log" and data["title"] == "Riferimenti Foundry IQ ricevuti: 1" for name, data in output_events)
+    completed = output_events[-1][1]
+    assert completed["references"][0]["title"] == "Manuale pompa"
+    assert completed["tool_calls"][0]["arguments"] == '{"queries":["pompa"]}'
+    assert completed["tool_calls"][0]["duration_ms"] == done_tool["duration_ms"]
+    assert completed["citations"][0]["title"] == "Manuale pompa"
+
+
+def test_stream_retrieve_keeps_mcp_details_from_events_when_final_response_omits_them(chat_app, monkeypatch):
+    source = {
+        "id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi",
+        "mcpServerArguments": {"toolName": "check_stock", "toolArguments": {"part_numbers": ["GRT-002"]}},
+        "count": 1, "elapsedMs": 17,
+    }
+    refs = [{"id": "0", "type": "mcpServer", "activitySource": 3, "title": "GRT-002"}]
+    response = StreamResponse([
+        ("references.completed", refs),
+        ("activity.completed", source),
+        ("response.completed", {"response": {"response": [], "references": [], "activity": []}}),
+    ])
+    monkeypatch.setattr(chat_app.requests, "post", lambda *args, **kwargs: response)
+    result = signed_in_client(chat_app).post("/api/chat", json={
+        "knowledge_base": "acl", "messages": [{"role": "user", "content": "ricambi?"}],
+        "use_acl": False, "stream": True,
+    })
+    completed = list(chat_app.read_sse(result.text.splitlines()))[-1][1]
+    [reference] = completed["references"]
+    assert reference["mcp_tool"] == "check_stock"
+    assert reference["mcp_arguments"] == {"part_numbers": ["GRT-002"]}
+    assert reference["elapsed_ms"] == 17 and reference["result_count"] == 1
+    assert completed["activity"][0]["mcp_tool"] == "check_stock"
+
+
+def test_stream_agent_sends_unlinked_internal_mcp_activity(chat_app, monkeypatch):
+    monkeypatch.setattr(chat_app, "PROJECT_ENDPOINT", "https://project.example")
+    tool = {"id": "kb", "type": "mcp_call", "name": "knowledge_base_retrieve", "status": "completed",
+            "output": json.dumps({"activity": [{"id": 1, "type": "mcpServer", "count": 0,
+                         "mcpServerArguments": {"toolName": "check_stock", "toolArguments": {"part": "A"}}}],
+                                  "references": []})}
+    events = [SimpleNamespace(type="response.output_item.done", item=tool),
+              SimpleNamespace(type="response.completed", response={"output_text": "ok", "output": []})]
+    monkeypatch.setattr(chat_app, "agents_client", lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=lambda **kwargs: ModelStream(events)),
+    ))
+    result = signed_in_client(chat_app).post("/api/agent-chat", json={
+        "agent": "wpc-technician-assistant", "messages": [{"role": "user", "content": "ricambi?"}], "stream": True,
+    })
+    output = list(chat_app.read_sse(result.text.splitlines()))
+    [live] = [data for name, data in output if name == "activity"]
+    assert live["mcp_tool"] == "check_stock" and live["tool_call_id"] == "kb" and live["count"] == 0
+    assert output[-1][1]["activity"] == [live]
+
+
+def test_stream_agent_reconciles_out_of_order_calls_by_id_and_preserves_zero_counts(chat_app, monkeypatch):
+    monkeypatch.setattr(chat_app, "PROJECT_ENDPOINT", "https://project.example")
+    kb = {"id": "kb", "type": "mcp_call", "name": "knowledge_base_retrieve", "server_label": "iq"}
+    stock = {"id": "stock", "type": "mcp_call", "name": "check_stock", "server_label": "ricambi"}
+    kb_output = json.dumps([{"ref_id": 0, "sourceData": {"title": "Manuale"}}])
+    events = [
+        SimpleNamespace(type="response.output_item.added", item={**kb, "status": "in_progress"}),
+        SimpleNamespace(type="response.output_item.added", item={**stock, "status": "in_progress"}),
+        SimpleNamespace(type="response.output_item.done", item={**kb, "status": "completed", "output": kb_output}),
+        SimpleNamespace(type="response.mcp_call_arguments.done", item_id="kb", arguments='{"q":"pompa"}'),
+        SimpleNamespace(type="response.output_item.done", item={**stock, "status": "completed",
+                                                                  "arguments": '{"part":"A"}', "output": '{"count":0}'}),
+        SimpleNamespace(type="response.completed", response={"output_text": "ok", "output": [
+            {"id": "stock", "type": "mcp_call", "name": None, "arguments": None, "output": None},
+            {"id": "kb", "type": "mcp_call", "name": None, "arguments": None, "output": None},
+        ]}),
+    ]
+    monkeypatch.setattr(chat_app, "agents_client", lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=lambda **kwargs: ModelStream(events)),
+    ))
+    result = signed_in_client(chat_app).post("/api/agent-chat", json={
+        "agent": "wpc-technician-assistant", "messages": [{"role": "user", "content": "pompa?"}], "stream": True,
+    })
+    completed = list(chat_app.read_sse(result.text.splitlines()))[-1][1]
+    assert [call["id"] for call in completed["tool_calls"]] == ["stock", "kb"]
+    assert completed["tool_calls"][0]["arguments"] == '{"part":"A"}'
+    assert completed["tool_calls"][0]["result_count"] == 0
+    assert completed["tool_calls"][1]["arguments"] == '{"q":"pompa"}'
+    [reference] = completed["references"]
+    assert reference["tool_call"] == 2 and reference["tool_call_id"] == "kb"
+    assert reference["mcp_call"]["arguments"] == '{"q":"pompa"}'
 
 
 @pytest.mark.parametrize("other_started_id", [None, 1])
@@ -562,6 +941,7 @@ def test_mcp_references_include_tool_call_details(chat_app, monkeypatch):
         "response": [{"role": "assistant", "content": [{"type": "text", "text": "contenuto"}]}],
         "activity": [{
             "id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi-magazzino-ks", "count": 1, "elapsedMs": 158,
+            "status": "completed",
             "mcpServerArguments": {"toolName": "get_part_details", "toolArguments": {"part_number": "GRT-002"}},
         }],
         "references": [
@@ -583,6 +963,116 @@ def test_mcp_references_include_tool_call_details(chat_app, monkeypatch):
     assert mcp_ref["result_count"] == 1
     assert "mcp_tool" not in other
     assert data["activity"][0]["mcp_tool"] == "get_part_details"
+    assert data["activity"][0]["status"] == "completed"
+
+
+def test_mcp_reference_retains_available_activity_without_tool_name(chat_app):
+    [reference] = chat_app.summarize_references({
+        "references": [{"id": "0", "type": "mcpServer", "activitySource": 3, "title": "Ricambio"}],
+        "activity": [{
+            "id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi",
+            "mcpServerArguments": {"toolArguments": {}}, "count": 0, "elapsedMs": 0,
+            "startedAt": "2026-01-01T10:00:00Z", "completedAt": "2026-01-01T10:00:01Z",
+            "warning": "parziale",
+        }],
+    })
+    assert reference["mcp_arguments"] == {}
+    assert reference["result_count"] == 0 and reference["elapsed_ms"] == 0
+    assert reference["mcp_started_at"] == "2026-01-01T10:00:00Z"
+    assert reference["mcp_completed_at"] == "2026-01-01T10:00:01Z"
+    assert reference["mcp_warning"] == "parziale"
+    assert "mcp_tool" not in reference
+
+
+def test_agent_mcp_call_preserves_full_arguments_and_explicit_result_count(chat_app):
+    arguments = json.dumps({"query": "pompa" * 150})
+    result = chat_app.summarize_agent_output({"output": [{
+        "id": "stock-1", "type": "mcp_call", "server_label": "ricambi", "name": "check_stock",
+        "arguments": arguments, "status": "completed", "output": json.dumps({"count": 0, "results": []}),
+    }]})
+    assert result["tool_calls"][0]["arguments"] == arguments
+    assert result["tool_calls"][0]["result_count"] == 0
+    assert result["references"] == []
+
+
+def test_agent_mcp_call_keeps_complete_error_and_does_not_invent_tool_name(chat_app):
+    error = "errore-" * 100
+    result = chat_app.summarize_agent_output({"output": [{
+        "id": "mcp-1", "type": "mcp_call", "server_label": "ricambi", "status": "failed", "error": error,
+    }]})
+    [call] = result["tool_calls"]
+    assert call["name"] is None and call["server"] == "ricambi"
+    assert call["error"] == error
+
+
+def test_agent_kb_reference_preserves_outer_call_and_linked_mcp_source(chat_app):
+    output = json.dumps({
+        "activity": [{
+            "id": 7, "type": "mcpServer", "knowledgeSourceName": "ricambi-ks",
+            "mcpServerArguments": {"toolName": "check_stock", "toolArguments": {"part_numbers": ["GRT-002"]}},
+            "count": 1, "elapsedMs": 87,
+        }],
+        "references": [{"id": "3", "type": "mcpServer", "activitySource": 7,
+                        "toolName": "check_stock", "title": "GRT-002"}],
+    })
+    result = chat_app.summarize_agent_output({"output": [
+        {"id": "search", "type": "azure_ai_search_call"},
+        {"id": "kb-1", "type": "mcp_call", "server_label": "knowledge-base", "name": "knowledge_base_retrieve",
+         "arguments": '{"query":"GRT-002"}', "status": "completed", "output": output},
+    ]})
+    [reference] = result["references"]
+    assert reference["tool_call"] == 2 and reference["tool_call_id"] == "kb-1"
+    assert reference["mcp_call"]["server"] == "knowledge-base"
+    assert reference["mcp_call"]["arguments"] == '{"query":"GRT-002"}'
+    assert reference["mcp_tool"] == "check_stock"
+    assert reference["mcp_arguments"] == {"part_numbers": ["GRT-002"]}
+    assert reference["result_count"] == 1 and reference["elapsed_ms"] == 87
+
+
+def test_agent_keeps_unlinked_internal_mcp_activities_separate_per_knowledge_call(chat_app):
+    def output(tool, with_reference):
+        return json.dumps({
+            "activity": [{"id": 7, "type": "mcpServer", "knowledgeSourceName": "ricambi",
+                          "mcpServerArguments": {"toolName": tool, "toolArguments": {"part": tool}},
+                          "count": 0, "elapsedMs": 0}],
+            "references": ([{"id": "0", "type": "mcpServer", "activitySource": 7, "title": "Ricambio"}]
+                           if with_reference else []),
+        })
+
+    result = chat_app.summarize_agent_output({"output": [
+        {"id": "kb-1", "type": "mcp_call", "name": "knowledge_base_retrieve", "output": output("first", True)},
+        {"id": "kb-2", "type": "mcp_call", "name": "knowledge_base_retrieve", "output": output("second", False)},
+    ]})
+    assert result["references"][0]["tool_call_id"] == "kb-1"
+    assert [(item["tool_call_id"], item["id"], item["mcp_tool"], item["count"]) for item in result["activity"]] == [
+        ("kb-1", 7, "first", 0), ("kb-2", 7, "second", 0),
+    ]
+    assert result["activity"][1]["mcp_arguments"] == {"part": "second"}
+
+
+def test_empty_mcp_call_and_activity_ids_are_not_correlated(chat_app):
+    output = json.dumps({
+        "activity": [{"id": "", "type": "mcpServer", "mcpServerArguments": {"toolName": "unlinked"}}],
+        "references": [{"id": "0", "type": "mcpServer", "activitySource": "", "title": "Ricambio"}],
+    })
+    result = chat_app.summarize_agent_output({"output": [{
+        "id": "", "type": "mcp_call", "name": "knowledge_base_retrieve", "output": output,
+    }]})
+    [reference] = result["references"]
+    [activity] = result["activity"]
+    assert "tool_call_id" not in reference and "tool_call_id" not in activity
+    assert "mcp_tool" not in reference and activity["mcp_tool"] == "unlinked"
+
+
+def test_ambiguous_retrieval_activity_id_does_not_assign_mcp_metadata(chat_app):
+    [reference] = chat_app.summarize_references({
+        "references": [{"id": "0", "type": "mcpServer", "activitySource": 1, "title": "Ricambio"}],
+        "activity": [
+            {"id": 1, "type": "mcpServer", "mcpServerArguments": {"toolName": "first"}},
+            {"id": "1", "type": "mcpServer", "mcpServerArguments": {"toolName": "second"}},
+        ],
+    })
+    assert "mcp_tool" not in reference
 
 
 def test_messages_fall_back_to_intents_on_400(chat_app, monkeypatch):
@@ -636,7 +1126,7 @@ def test_app_service_rejects_requests_without_login(chat_app, monkeypatch, auth_
     client = TestClient(chat_app.app)
 
     assert client.get("/healthz").status_code == 200
-    for path in ("/", "/trace", "/api/config"):
+    for path in ("/", "/trace", "/api/config", "/api/profile/group-names"):
         assert client.get(path, headers=headers).status_code == status
     result = client.post(
         "/api/chat",

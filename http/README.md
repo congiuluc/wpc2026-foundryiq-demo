@@ -14,41 +14,17 @@ Le chiamate usano servizi reali e possono generare costi. Non creano risorse né
 
 Serve un ambiente già distribuito con [azd o notebook](../infra/README.md#deployment), le knowledge base indicizzate e, per la demo agenti, gli [agenti pubblicati](../agents/README.md). L'utente deve poter interrogare Search (ruolo **Search Index Data Reader**; per ispezionare la definizione KB serve anche **Search Service Contributor**) e usare il progetto Foundry (ruolo **Azure AI User**, o equivalente). Per i documenti protetti servono anche le appartenenze Entra e le ACL effettive.
 
-REST Client legge `http\.env` dalla cartella del file `.http`, non l'ambiente del terminale integrato. Per un ambiente azd, esegui dalla root in PowerShell 7 dopo il login Azure CLI sul tenant corretto (`az login --tenant <tenant-id>`):
+REST Client legge `http\.env` dalla cartella del file `.http`, non l'ambiente del terminale integrato. Generalo dalla root in PowerShell 7 dopo il login Azure CLI sul tenant corretto (`az login --tenant <tenant-id>`):
 
 ```powershell
-$ErrorActionPreference = 'Stop'
-$raw = azd env get-values --output json --no-prompt
-if ($LASTEXITCODE -ne 0) { throw 'Impossibile leggere ambiente azd selezionato.' }
-$values = ($raw -join "`n") | ConvertFrom-Json
-foreach ($key in @('AZURE_TENANT_ID', 'FOUNDRYIQ_DEMO_SEARCH_ENDPOINT', 'FOUNDRYIQ_DEMO_PROJECT_ENDPOINT')) {
-    if (-not $values.$key) { throw "Variabile azd mancante: $key" }
-}
-
-function Get-DemoToken([string]$Resource) {
-    $token = az account get-access-token --tenant $values.AZURE_TENANT_ID `
-        --resource $Resource --query accessToken -o tsv --only-show-errors
-    if ($LASTEXITCODE -ne 0 -or -not $token) { throw "Token non disponibile per $Resource" }
-    return $token.Trim()
-}
-
-$searchToken = Get-DemoToken 'https://search.azure.com'
-$foundryToken = Get-DemoToken 'https://ai.azure.com'
-$kbName = if ($values.FOUNDRYIQ_DEMO_KB_NAME) { $values.FOUNDRYIQ_DEMO_KB_NAME } else { 'wpc-foundryiq-kb' }
-$aclKbName = if ($values.FOUNDRYIQ_ACL_KB_NAME) { $values.FOUNDRYIQ_ACL_KB_NAME } else { 'wpc-acl-kb' }
-@(
-    "FOUNDRYIQ_DEMO_SEARCH_ENDPOINT=$($values.FOUNDRYIQ_DEMO_SEARCH_ENDPOINT.TrimEnd('/'))"
-    "FOUNDRYIQ_DEMO_KB_NAME=$kbName"
-    "FOUNDRYIQ_ACL_KB_NAME=$aclKbName"
-    "FOUNDRYIQ_DEMO_PROJECT_ENDPOINT=$($values.FOUNDRYIQ_DEMO_PROJECT_ENDPOINT.TrimEnd('/'))"
-    "SEARCH_TOKEN=$searchToken"
-    "USER_SEARCH_TOKEN=$searchToken"
-    "FOUNDRY_TOKEN=$foundryToken"
-) | Set-Content -LiteralPath .\http\.env -Encoding utf8
-Remove-Variable searchToken, foundryToken
+./http/New-HttpEnv.ps1                                  # ambiente azd selezionato
+./http/New-HttpEnv.ps1 -EnvironmentName wpc-demo         # ambiente azd specifico
+./http/New-HttpEnv.ps1 -SkipFoundryToken                 # solo demo Search (multi-fonte e ACL)
 ```
 
-Il comando **scrive token in chiaro nel file locale** `http\.env`, ignorato da Git: usalo solo sul tuo computer, non sincronizzarlo né condividerlo. I token non vengono stampati. Ripeti il comando alla scadenza o dopo un cambio di utente; sovrascrive la configurazione locale. Per provare solo Search puoi omettere il recupero e la riga del token Foundry.
+[New-HttpEnv.ps1](New-HttpEnv.ps1) legge endpoint e nomi KB dall'ambiente azd (oppure, senza azd o con `WPC_NO_AZD=true`, da `.deploy/<ambiente>.local.env` creato da `scripts/deploy_noazd.ps1`), ottiene i token Search (`https://search.azure.com`) e Foundry (`https://ai.azure.com`) dell'utente connesso e scrive `http\.env`. I nomi KB assenti usano i default `wpc-foundryiq-kb` e `wpc-acl-kb`.
+
+Lo script **scrive token in chiaro nel file locale** `http\.env`, ignorato da Git: usalo solo sul tuo computer, non sincronizzarlo né condividerlo. I token non vengono stampati. Rieseguilo alla scadenza (circa un'ora) o dopo un cambio di utente; sovrascrive la configurazione locale.
 
 Senza azd, copia [`.env.example`](.env.example) in `http\.env`, inserisci gli endpoint del deployment e i token ottenuti con Azure CLI per le stesse audience. Il token sorgente deve rappresentare un **utente delegato**, non una service principal. Non inserire mai token nei file `.http`, nei commit o negli screenshot. Anche cronologia e anteprime di REST Client possono contenere header e risposte riservate: non esportarle e pulisci la cronologia al termine. Elimina `http\.env` dopo la demo.
 

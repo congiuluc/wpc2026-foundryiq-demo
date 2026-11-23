@@ -7,9 +7,9 @@ import { CurrentTraceDialog } from "./Trace";
 import { ActivityIcon, ArrowRightIcon, BotIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CompareIcon, FlaskIcon, FlowIcon, GlobeIcon, LayersIcon, SendIcon, ShieldIcon, SparkIcon } from "./UiIcons";
 import { demoRoutes, isMode } from "./routes";
 import { createCollector } from "./trace/currentTrace";
-import { readEvents } from "./stream";
+import { activityKey, mergeAvailable, mergeStreamResult, readEvents } from "./stream";
 import { errorMessage, isRecord } from "./types";
-import type { Agent, ChatConfig, ChatMessage, ChatResult, Demo, Entry, Example, GraphicData, KnowledgeBase, Mode, ToolCall, Turn } from "./types";
+import type { Agent, ChatConfig, ChatMessage, ChatResult, Demo, Entry, Example, GraphicData, KnowledgeBase, Mode, Turn } from "./types";
 
 const hints: Record<Mode, string> = {
   noacl: "Identità dell'app (senza filtro ACL documentale; SharePoint remoto usa i permessi utente).",
@@ -36,25 +36,15 @@ async function request(path: string, body: object, signal: AbortSignal, onUpdate
       if (event === "error") throw new Error(typeof data.message === "string" ? data.message : "Errore nello stream.");
       if (event === "completed") {
         if (typeof data.answer !== "string") throw new Error("Risposta finale non valida.");
-        completed = { ...result, ...data, answer: data.answer };
-        if (Array.isArray(data.tool_calls) && result.tool_calls?.length) {
-          const streamed = result.tool_calls;
-          const finalCalls: ToolCall[] = data.tool_calls;
-          const finalIds = new Set(finalCalls.flatMap((call) => call.id ? [call.id] : []));
-          completed.tool_calls = finalCalls.map((call) => {
-            const live = call.id ? streamed.find((item) => item.id === call.id) : undefined;
-            return live ? { ...call, started_ms: live.started_ms ?? call.started_ms,
-              completed_ms: live.completed_ms ?? call.completed_ms, duration_ms: live.duration_ms ?? call.duration_ms } : call;
-          });
-          completed.tool_calls.push(...streamed.filter((call) => call.id ? !finalIds.has(call.id) : !finalCalls.length));
-        }
+        completed = mergeStreamResult(result, { ...result, ...data, answer: data.answer });
         continue;
       }
       if (event === "status" && isRecord(data.result)) {
-        result = { ...result, ...data.result };
         if (isRecord(data.result.streaming) && data.result.streaming.mode === "json_retry") {
-          result = { ...result, tool_calls: undefined, usage: undefined, references: undefined, citations: undefined };
+          result = { ...result, tool_calls: undefined, usage: undefined, references: undefined, citations: undefined,
+            citation_spans: undefined, activity: undefined, sources: undefined, retrieval_usage: undefined };
         }
+        result = mergeStreamResult(result, { ...result, ...data.result });
       }
       if (event === "log" && typeof data.title === "string" && typeof data.at_ms === "number") {
         result = { ...result, timeline: [...(result.timeline || []), { ...data, title: data.title, at_ms: data.at_ms, phase: String(data.phase ?? "") }] };
@@ -70,15 +60,21 @@ async function request(path: string, body: object, signal: AbortSignal, onUpdate
       if (event === "usage") result = { ...result, usage: data };
       if (event === "activity") {
         const activity = [...(result.activity || [])];
-        const index = activity.findIndex(item => item.id === data.id);
-        if (index < 0) activity.push(data); else activity[index] = data;
+        const id = typeof data.id === "string" || typeof data.id === "number" ? data.id : undefined;
+        const callId = typeof data.tool_call_id === "string" || typeof data.tool_call_id === "number" ? data.tool_call_id : undefined;
+        const callNumber = typeof data.tool_call === "number" ? data.tool_call : undefined;
+        const agent = path === "/api/agent-chat";
+        const key = activityKey(id, callId, callNumber, agent);
+        const index = key == null ? -1 : activity.findIndex(item => item.id === id
+          && activityKey(item.id, item.tool_call_id, item.tool_call, agent) === key);
+        if (index < 0) activity.push(data); else activity[index] = mergeAvailable(activity[index], data);
         result = { ...result, activity };
       }
       if (event === "tool" && typeof data.type === "string") {
         const calls = [...(result.tool_calls || [])];
-        const index = calls.findIndex(item => item.id === data.id);
+        const index = data.id == null ? -1 : calls.findIndex(item => item.id === data.id);
         const tool = { ...data, type: data.type };
-        if (index < 0) calls.push(tool); else calls[index] = tool;
+        if (index < 0) calls.push(tool); else calls[index] = mergeAvailable(calls[index], tool);
         result = { ...result, tool_calls: calls };
       }
       onUpdate(result, typeof data.stage === "string" ? data.stage : undefined);

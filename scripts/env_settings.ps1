@@ -63,6 +63,29 @@ function Save-EnvSetting([string]$Name, [string]$Value) {
     }
 }
 
+# All settings of an environment as an ordered hashtable: the azd environment (selected or named) when azd
+# is used, otherwise the local state file .deploy/<name>.local.env. Never prints values.
+function Get-AllEnvSettings([string]$EnvironmentName = '') {
+    if (Test-AzdAvailable) {
+        $azdArgs = @('env', 'get-values', '--output', 'json', '--no-prompt')
+        if ($EnvironmentName) { $azdArgs += @('--environment', $EnvironmentName) }
+        Push-Location (Split-Path $PSScriptRoot -Parent)
+        try { $raw = & azd @azdArgs 2>$null } finally { Pop-Location }
+        if ($LASTEXITCODE -ne 0 -or -not $raw) {
+            throw "Lettura dell'ambiente azd fallita: verifica 'azd env list' e il nome dell'ambiente."
+        }
+        $parsed = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+        $values = [ordered]@{}
+        foreach ($key in $parsed.Keys) { $values[$key] = [string]$parsed[$key] }
+        return $values
+    }
+    $name = if ($EnvironmentName) { $EnvironmentName } else { $env:AZURE_ENV_NAME }
+    if (-not $name) { throw 'azd non disponibile: indica -EnvironmentName o imposta AZURE_ENV_NAME.' }
+    $path = Get-StateFilePath $name
+    if (-not (Test-Path $path)) { throw "File di stato non trovato: $path (esegui prima scripts/deploy_noazd.ps1)." }
+    return Read-StateFile $name
+}
+
 # Command to suggest when a hook step must be resumed, depending on how the deployment is driven.
 function Get-ResumeCommand([ValidateSet('postprovision', 'postdeploy')][string]$Hook) {
     if (Test-AzdAvailable) { return "azd hooks run $Hook" }

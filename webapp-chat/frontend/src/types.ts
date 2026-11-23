@@ -30,6 +30,15 @@ export interface UserProfile {
   roles: string[];
   token_expires_on?: number | null;
 }
+export interface GroupNamesResult {
+  object_id: string | null;
+  tenant_id: string | null;
+  groups: string[];
+  groups_status: UserProfile["groups_status"];
+  names: Record<string, string>;
+  status: "available" | "partial" | "unavailable";
+  message: string | null;
+}
 export interface ChatConfig {
   user?: string | null;
   user_source?: string;
@@ -48,12 +57,20 @@ export interface Reference {
   type?: string | null;
   knowledge_source?: string | null;
   knowledge_source_type?: string | null;
+  activity_source?: string | number | null;
   tool_call?: number | null;
+  tool_call_id?: string | number | null;
+  mcp_call?: ToolCall | null;
   score?: number | null;
   mcp_tool?: string | null;
   mcp_arguments?: Record<string, unknown> | null;
   elapsed_ms?: number | null;
   result_count?: number | null;
+  mcp_started_at?: string | null;
+  mcp_completed_at?: string | null;
+  mcp_status?: string | null;
+  mcp_error?: unknown;
+  mcp_warning?: string | null;
 }
 export interface CitationSpan {
   start: number;
@@ -61,13 +78,14 @@ export interface CitationSpan {
   citation_index: number;
 }
 export interface ToolCall {
-  id?: string | null;
+  id?: string | number | null;
   type: string;
   name?: string | null;
   server?: string | null;
   status?: string | null;
   arguments?: string | null;
   error?: string | null;
+  result_count?: number | null;
   started_ms?: number;
   completed_ms?: number;
   duration_ms?: number;
@@ -95,6 +113,11 @@ export interface Activity {
   query?: string;
   count?: number;
   error?: unknown;
+  warning?: string;
+  mcp_tool?: string;
+  mcp_arguments?: Record<string, unknown>;
+  tool_call_id?: string | number | null;
+  tool_call?: number | null;
 }
 export interface TimelineEvent {
   at_ms: number;

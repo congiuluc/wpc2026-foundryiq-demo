@@ -307,6 +307,11 @@ def main() -> None:
             "editing": "Italian on-screen captions; no fabricated responses or request-time adjustments",
             "demos": results,
         }
+        previous = ROOT / "docs" / "videos" / "manifest.json"
+        if previous.exists():
+            # Keep entries recorded by other scripts, such as capture_acl_two_users.py.
+            extra = json.loads(previous.read_text(encoding="utf-8")).get("demos", {})
+            manifest["demos"] = {**{k: v for k, v in extra.items() if k not in DEMOS}, **results}
         (staging / "videos" / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         for folder in ("images", "videos"):
             destination = ROOT / "docs" / folder

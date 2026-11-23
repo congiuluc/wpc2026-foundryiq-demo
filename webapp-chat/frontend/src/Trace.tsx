@@ -107,11 +107,11 @@ function timingLabel(row: WaterfallRow) {
   if (row.endMs !== undefined) return "Inizio non disponibile";
   return "Tempi non disponibili";
 }
-function statusLabel(status?: string) {
+function statusLabel(status?: string, lastObserved = false) {
   if (!status) return "";
   if (["completed", "succeeded"].includes(status)) return "Completata";
   if (["failed", "error", "incomplete", "cancelled", "canceled"].includes(status)) return "Errore";
-  if (["in_progress", "queued", "running"].includes(status)) return "In corso all'ultimo evento";
+  if (["in_progress", "queued", "running"].includes(status)) return lastObserved ? "In corso all'ultimo evento" : "In corso";
   return `Stato: ${status}`;
 }
 const waterfallKinds: Record<WaterfallRow["kind"], string> = {
@@ -131,7 +131,7 @@ function TraceWaterfall({ message }: { message: ParsedTrace["messages"][number] 
           const bar = row.startMs !== undefined && row.endMs !== undefined && row.endMs > row.startMs && row.timing !== "invalid"
             ? { left: `${row.startMs / graph.extentMs * 100}%`, width: `${(row.endMs - row.startMs) / graph.extentMs * 100}%` }
             : null;
-          const status = statusLabel(row.status);
+          const status = statusLabel(row.status, row.kind !== "request");
           return <li className={`waterfall-row waterfall-${row.kind}`} data-kind={row.kind} key={index}>
             <div className="waterfall-label"><span className="waterfall-type">{waterfallKinds[row.kind]}</span><strong>{row.label}</strong>
               {status && <span className={`waterfall-state${status === "Errore" ? " is-error" : ""}`}>{status}</span>}</div>

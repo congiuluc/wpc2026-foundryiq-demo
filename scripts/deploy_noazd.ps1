@@ -94,7 +94,7 @@ function Invoke-Deploy {
             if ($svc.Dir -eq 'webapp-chat') {
                 $stage = Join-Path ([IO.Path]::GetTempPath()) "wpc-chat-$([guid]::NewGuid().ToString('N'))"
                 New-Item -ItemType Directory -Path $stage | Out-Null
-                Copy-Item (Join-Path $root 'webapp-chat/app.py'), (Join-Path $root 'webapp-chat/requirements.txt') -Destination $stage
+                Copy-Item (Join-Path $root 'webapp-chat/app.py'), (Join-Path $root 'webapp-chat/mcp_references.py'), (Join-Path $root 'webapp-chat/requirements.txt') -Destination $stage
                 New-Item -ItemType Directory -Path (Join-Path $stage 'frontend') | Out-Null
                 Copy-Item (Join-Path $root 'webapp-chat/frontend/dist') -Destination (Join-Path $stage 'frontend') -Recurse
                 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force

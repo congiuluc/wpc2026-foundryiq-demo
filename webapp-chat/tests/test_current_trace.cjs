@@ -7,14 +7,14 @@ const { pathToFileURL } = require("node:url");
 
 const frontend = path.resolve(__dirname, "..", "frontend");
 const frontendRequire = createRequire(path.join(frontend, "package.json"));
-let server, createCollector, safeText, parseTrace, readEvents;
+let server, createCollector, safeText, parseTrace, readEvents, mergeStreamResult;
 
 before(async () => {
   const { createServer } = await import(pathToFileURL(frontendRequire.resolve("vite")).href);
   server = await createServer({ root: frontend, logLevel: "silent", server: { middlewareMode: true }, appType: "custom" });
   ({ createCollector, safeText } = await server.ssrLoadModule(path.join(frontend, "src", "trace", "currentTrace.ts")));
   ({ parseTrace } = await server.ssrLoadModule(path.join(frontend, "src", "trace", "traceParser.ts")));
-  ({ readEvents } = await server.ssrLoadModule(path.join(frontend, "src", "stream.ts")));
+  ({ readEvents, mergeStreamResult } = await server.ssrLoadModule(path.join(frontend, "src", "stream.ts")));
 });
 
 after(async () => { if (server) await server.close(); });
@@ -31,6 +31,54 @@ test("stream parser preserves split UTF-8, multiline data, heartbeats and CRLF",
     { event: "delta", data: { text: "disponibilità" } },
     { event: "completed", data: { answer: "ok" } },
   ]);
+});
+
+test("final stream result retains identified MCP metadata and stream-only citations", () => {
+  const liveCall = { id: "kb-1", type: "mcp_call", name: "knowledge_base_retrieve",
+    arguments: '{"query":"pompa"}', result_count: 0, duration_ms: 0 };
+  const live = {
+    answer: "parziale", tool_calls: [liveCall, { id: "stock", type: "mcp_call", name: "check_stock" }],
+    references: [{ id: 0, tool_call_id: "kb-1", title: "Manuale", mcp_call: liveCall }],
+    citations: [{ title: "Guida", type: "url_citation", url: "https://example.test/guida" }],
+    activity: [{ id: 2, type: "mcpServer", mcp_tool: "check_stock", count: 0 }],
+  };
+  const final = {
+    answer: "completa", tool_calls: [{ id: "kb-1", type: "mcp_call", arguments: null, result_count: null }],
+    references: [{ id: 0, tool_call_id: "kb-1", title: "Manuale", mcp_call: null }],
+    citations: [], activity: [{ id: 2, type: "mcpServer", mcp_tool: null }],
+  };
+  const result = mergeStreamResult(live, final);
+  assert.equal(result.tool_calls[0].arguments, '{"query":"pompa"}');
+  assert.equal(result.tool_calls[0].result_count, 0);
+  assert.equal(result.tool_calls[0].duration_ms, 0);
+  assert.equal(result.tool_calls[1].id, "stock");
+  assert.equal(result.references[0].mcp_call.name, "knowledge_base_retrieve");
+  assert.equal(result.citations[0].title, "Guida");
+  assert.equal(result.activity[0].mcp_tool, "check_stock");
+  assert.equal(result.activity[0].count, 0);
+});
+
+test("stream reconciliation keeps identical activity IDs separate across anonymous KB calls", () => {
+  const live = { agent: "iq", answer: "", activity: [
+    { id: 7, tool_call: 1, type: "mcpServer", mcp_tool: "first" },
+    { id: 7, tool_call: 2, type: "mcpServer", mcp_tool: "second" },
+  ] };
+  const final = { agent: "iq", answer: "ok", activity: [
+    { id: 7, tool_call: 1, type: "mcpServer" },
+  ] };
+  const merged = mergeStreamResult(live, final);
+  assert.deepEqual(merged.activity.map(item => item.mcp_tool), ["first", "second"]);
+});
+
+test("empty tool IDs do not merge different anonymous KB calls", () => {
+  const live = { agent: "iq", answer: "", activity: [
+    { id: 7, tool_call_id: "", tool_call: 1, type: "mcpServer", mcp_tool: "first" },
+    { id: 7, tool_call_id: "", tool_call: 2, type: "mcpServer", mcp_tool: "second" },
+  ] };
+  const final = { agent: "iq", answer: "ok", activity: [
+    { id: 7, tool_call_id: "", tool_call: 1, type: "mcpServer" },
+  ] };
+  assert.deepEqual(mergeStreamResult(live, final).activity.map(item => item.mcp_tool), ["first", "second"]);
 });
 
 test("partial trace stays in progress and is replaced by the completed result", () => {
@@ -192,6 +240,7 @@ test("projects response fields only and redacts credentials and signed URLs", ()
   assert.match(text, /total_tokens":0/);
   assert.match(text, /https:\/\/example.com\/doc/);
   assert.equal(safeText("api_key=secret-value"), "api_key=[omesso]");
+  assert.equal(safeText('password="secret with spaces"'), "password=[omesso]");
 });
 
 test("real observed calls and references parse without inventing tool outputs", () => {
@@ -226,6 +275,31 @@ test("agent trace keeps actual reference IDs without inventing citation markers"
   assert.equal(sources[0].extra.tool_call, 2);
   assert.equal(sources[1].marker, "Rif. 1");
   assert.equal(sources[2].marker, "Citazione");
+});
+
+test("trace includes MCP reference metadata while redacting nested credentials", () => {
+  const trace = createCollector();
+  const id = trace.begin({ question: "Ricambio?" });
+  const argumentsObject = { part: "GRT-002", access_token: "opaque secret value",
+    nested: [{ api_key: "key with spaces", url: "https://example.test/parts?sig=signed" }] };
+  trace.finish(id, {
+    answer: "ok", activity: [{ id: 3, type: "mcpServer", mcp_tool: "check_stock", mcp_arguments: argumentsObject, count: 0 }],
+    tool_calls: [{ id: "kb", type: "mcp_call", name: "knowledge_base_retrieve",
+      arguments: JSON.stringify(argumentsObject), result_count: 0 }],
+    references: [{ id: 0, title: "Ricambio", tool_call_id: "kb", mcp_tool: "check_stock",
+      mcp_arguments: argumentsObject, elapsed_ms: 0, result_count: 0,
+      mcp_call: { id: "kb", type: "mcp_call", name: "knowledge_base_retrieve", arguments: JSON.stringify(argumentsObject) } }],
+  });
+  const snapshot = trace.snapshot();
+  const text = JSON.stringify(snapshot);
+  assert.doesNotMatch(text, /opaque|secret value|key with spaces|with spaces|signed/);
+  const [, metadata, call, sources] = snapshot.messages[1].parts;
+  assert.equal(metadata.activity[0].mcp_tool, "check_stock");
+  assert.equal(metadata.activity[0].mcp_arguments.part, "GRT-002");
+  assert.equal(call.result_count, 0);
+  assert.equal(sources.sources[0].extra.mcp_arguments.part, "GRT-002");
+  assert.equal(sources.sources[0].extra.result_count, 0);
+  assert.equal(sources.sources[0].extra.mcp_call.name, "knowledge_base_retrieve");
 });
 
 test("Foundry tool responses expose document, page and snippet from source markers", () => {

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
-import re
 import shutil
 import subprocess
 import threading
@@ -20,20 +20,30 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import unquote
+from uuid import UUID
 
 import requests
-from azure.identity import AzureCliCredential, DefaultAzureCredential, get_bearer_token_provider
+from azure.core.exceptions import AzureError
+from azure.identity import AzureCliCredential, DefaultAzureCredential, ManagedIdentityCredential, get_bearer_token_provider
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import AzureOpenAI
 from pydantic import BaseModel, Field
 
+from mcp_references import (
+    _as_dict, _knowledge_mcp_activity, _knowledge_references, _short, _tool_event,
+    summarize_agent_output, summarize_references,
+)
+
 SEARCH_SCOPE = "https://search.azure.com/.default"
 SEARCH_AUDIENCES = ("https://search.azure.com", "880da380-985e-4198-81b9-e05b1cc53158")
+GRAPH_SCOPE = "https://graph.microsoft.com/.default"
+GRAPH_BATCH_URL = "https://graph.microsoft.com/v1.0/$batch"
 COGNITIVE_SCOPE = "https://cognitiveservices.azure.com/.default"
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 RUNNING_ON_APP_SERVICE = bool(os.getenv("WEBSITE_SITE_NAME"))
+logger = logging.getLogger(__name__)
 
 
 def _load_azd_env() -> None:
@@ -95,6 +105,13 @@ KNOWLEDGE_BASES: dict[str, dict[str, Any]] = {
         "remote_sharepoint": True,
         "examples": [
             # Each example needs more than one knowledge source (manuals, MCP inventory, SharePoint, Bing).
+            {
+                "label": "Compressore CMP-4324 · spia CTL11 e approvazione",
+                "question": "Il compressore CMP-4324 non parte e la spia CTL11 è rossa: è l'alimentatore? "
+                "Il cavo ha l'etichetta UL 817, cosa significa? Posso sostituire il pezzo da solo o serve "
+                "un'approvazione?",
+                "sources": ["Manuali", "Ricambi", "Web", "SharePoint"],
+            },
             {
                 "label": "Rx1 · inceppamenti e motore di tensione",
                 "question": "Il Rx1 Digital Weave Integration Station ha inceppamenti del tessuto: cosa controllo "
@@ -181,6 +198,7 @@ NO_CONTENT_ANSWER = "Nessun contenuto accessibile trovato nella knowledge base p
 
 app_credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
 local_user_credential = None if RUNNING_ON_APP_SERVICE else AzureCliCredential()
+graph_managed_credential = ManagedIdentityCredential() if RUNNING_ON_APP_SERVICE else None
 
 
 class _TokenCache:
@@ -201,6 +219,7 @@ class _TokenCache:
 
 
 tokens = _TokenCache()
+graph_tokens = _TokenCache()
 _openai_client: AzureOpenAI | None = None
 _agents_client: Any = None
 _agents_lock = threading.Lock()
@@ -323,6 +342,104 @@ def user_profile(request: Request, access_claims: dict[str, Any], source: str) -
     }
 
 
+def _graph_status_message(status: int) -> str:
+    if status in (401, 403):
+        return f"Accesso a Microsoft Graph negato (HTTP {status}): verifica Group.ReadBasic.All e il consenso amministrativo."
+    if status == 429:
+        return "Microsoft Graph ha limitato le richieste: riprova."
+    if status == 404:
+        return "Uno o più gruppi non sono visibili o non esistono in Microsoft Graph."
+    return f"Microsoft Graph ha restituito un errore HTTP {status}."
+
+
+def resolve_group_names(groups: list[str]) -> dict[str, Any]:
+    """Resolve only group IDs in the current user's claims, never group memberships."""
+    names: dict[str, str] = {}
+    problems: set[str] = set()
+    valid_groups: list[tuple[str, str]] = []
+    for group in groups:
+        try:
+            valid_groups.append((group, str(UUID(group))))
+        except ValueError:
+            problems.add("Alcuni valori nei claim non sono Object ID di gruppi validi.")
+
+    if valid_groups:
+        credential = graph_managed_credential if RUNNING_ON_APP_SERVICE else local_user_credential
+        try:
+            token = graph_tokens.get(credential, GRAPH_SCOPE)
+        except AzureError as exc:
+            logger.warning("Acquisizione token Microsoft Graph fallita: %s", type(exc).__name__)
+            problems.add("Impossibile ottenere un token Microsoft Graph: verifica l'identità e le autorizzazioni.")
+        else:
+            for offset in range(0, len(valid_groups), 20):
+                group_batch = valid_groups[offset:offset + 20]
+                by_request_id = {str(index): group for index, group in enumerate(group_batch, 1)}
+                body = {"requests": [
+                    {"id": request_id, "method": "GET", "url": f"/groups/{group_id}?$select=id,displayName"}
+                    for request_id, (_, group_id) in by_request_id.items()
+                ]}
+                try:
+                    response = requests.post(
+                        GRAPH_BATCH_URL,
+                        headers={"Authorization": f"Bearer {token}"},
+                        json=body,
+                        timeout=(3.05, 5),
+                        allow_redirects=False,
+                    )
+                except requests.RequestException as exc:
+                    logger.warning("Richiesta Microsoft Graph fallita: %s", type(exc).__name__)
+                    problems.add("Microsoft Graph non raggiungibile: riprova.")
+                    break
+                if response.status_code != 200:
+                    problems.add(_graph_status_message(response.status_code))
+                    break
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = None
+                responses = payload.get("responses") if isinstance(payload, dict) else None
+                if not isinstance(responses, list):
+                    problems.add("Microsoft Graph ha restituito una risposta incompleta o non valida.")
+                    break
+                seen: set[str] = set()
+                for item in responses:
+                    if not isinstance(item, dict):
+                        problems.add("Microsoft Graph ha restituito una risposta incompleta o non valida.")
+                        continue
+                    request_id = item.get("id")
+                    if not isinstance(request_id, str) or request_id not in by_request_id or request_id in seen:
+                        problems.add("Microsoft Graph ha restituito una risposta incompleta o non valida.")
+                        continue
+                    seen.add(request_id)
+                    status = item.get("status")
+                    if type(status) is not int:
+                        problems.add("Microsoft Graph ha restituito una risposta incompleta o non valida.")
+                        continue
+                    if status != 200:
+                        problems.add(_graph_status_message(status))
+                        continue
+                    group, expected_id = by_request_id[request_id]
+                    result = item.get("body")
+                    if (
+                        isinstance(result, dict)
+                        and isinstance(result.get("id"), str)
+                        and result["id"].lower() == expected_id
+                        and isinstance(result.get("displayName"), str)
+                        and result["displayName"].strip()
+                    ):
+                        names[group] = result["displayName"]
+                    else:
+                        problems.add("Microsoft Graph ha restituito una risposta incompleta o non valida.")
+                if len(seen) != len(by_request_id):
+                    problems.add("Microsoft Graph ha restituito una risposta incompleta o non valida.")
+
+    if not problems and len(names) == len(groups):
+        return {"names": names, "status": "available", "message": None}
+    message = " ".join(sorted(problems)) or "Microsoft Graph non ha restituito tutti i nomi."
+    logger.warning("Risoluzione nomi gruppi incompleta: %s", message)
+    return {"names": names, "status": "partial" if names else "unavailable", "message": message}
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=8000)
@@ -375,66 +492,20 @@ def extracted_text(result: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def summarize_references(result: dict[str, Any]) -> list[dict[str, Any]]:
-    references = []
-    activity_by_id = {
-        str(item["id"]): item
-        for item in result.get("activity") or []
-        if item.get("id") is not None
-    }
-    for ref in result.get("references") or []:
-        activity_id = ref.get("activitySource")
-        activity = activity_by_id.get(str(activity_id), {}) if activity_id is not None else {}
-        source = ref.get("sourceData") or {}
-        location = ref.get("blobUrl") or ref.get("url") or ref.get("webUrl") or source.get("url")
-        doc_url = ref.get("docUrl") or source.get("doc_url")
-        if not location and isinstance(doc_url, str):
-            # Indexed SharePoint returns a Graph drive path: keep only the path inside the library.
-            location = unquote(doc_url.split("root:/", 1)[-1]) if "root:/" in doc_url else doc_url
-        title = ref.get("title") or source.get("title") or source.get("name")
-        if not title and location:
-            title = unquote(location.rstrip("/").split("/")[-1])
-        # Storage URLs are not readable from the browser; only web and SharePoint links are clickable.
-        is_storage = bool(location) and (".blob.core." in location or ".dfs.core." in location)
-        reference = {
-            "id": ref.get("id"),
-            "type": ref.get("type"),
-            "activity_source": activity_id,
-            "knowledge_source": activity.get("knowledgeSourceName"),
-            "knowledge_source_type": activity.get("type") if activity.get("knowledgeSourceName") else None,
-            "title": title or ref.get("docKey") or str(ref.get("id")),
-            "url": location if location and location.startswith("http") and not is_storage else None,
-            "path": location,
-            "score": ref.get("rerankerScore"),
-        }
-        # mcpServer sources: the reference names the tool, the linked activity holds arguments and timing.
-        mcp = activity.get("mcpServerArguments") if isinstance(activity.get("mcpServerArguments"), dict) else {}
-        tool = ref.get("toolName") or mcp.get("toolName")
-        if tool:
-            reference["mcp_tool"] = tool
-            if isinstance(mcp.get("toolArguments"), dict):
-                reference["mcp_arguments"] = mcp["toolArguments"]
-            if activity.get("elapsedMs") is not None:
-                reference["elapsed_ms"] = activity["elapsedMs"]
-            if activity.get("count") is not None:
-                reference["result_count"] = activity["count"]
-        references.append(reference)
-    return references
-
-
 def summarize_activity(result: dict[str, Any]) -> list[dict[str, Any]]:
     activity = []
     for item in result.get("activity") or []:
         entry = {k: item[k] for k in (
             "id", "type", "knowledgeSourceName", "count", "elapsedMs", "startedAt", "completedAt",
-            "inputTokens", "outputTokens",
+            "inputTokens", "outputTokens", "warning", "status",
         ) if item.get(k) is not None}
         for value in item.values():
             if isinstance(value, dict) and isinstance(value.get("search"), str):
                 entry["query"] = value["search"]
         mcp = item.get("mcpServerArguments")
-        if isinstance(mcp, dict) and mcp.get("toolName"):
-            entry["mcp_tool"] = mcp["toolName"]
+        if isinstance(mcp, dict):
+            if mcp.get("toolName"):
+                entry["mcp_tool"] = mcp["toolName"]
             if isinstance(mcp.get("toolArguments"), dict):
                 entry["mcp_arguments"] = mcp["toolArguments"]
         if item.get("error"):
@@ -573,6 +644,51 @@ def retrieval_usage(activity: list[dict[str, Any]]) -> dict[str, int]:
     return usage
 
 
+def _merge_available(earlier: dict[str, Any], later: dict[str, Any]) -> dict[str, Any]:
+    merged = earlier.copy()
+    for key, value in later.items():
+        if value is None or value == "":
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_available(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _item_id(item: dict[str, Any]) -> tuple[type, str | int] | None:
+    value = item.get("id")
+    return (type(value), value) if type(value) in (str, int) and value != "" else None
+
+
+def _merge_observed(final: list[dict[str, Any]], observed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reconcile only unique IDs; retain unidentifiable observations if no final items exist."""
+    merged = [item.copy() for item in final]
+    for item in observed:
+        identity = _item_id(item)
+        if identity is None:
+            if not final:
+                merged.append(item.copy())
+            continue
+        final_matches = [i for i, current in enumerate(final) if _item_id(current) == identity]
+        observed_matches = sum(_item_id(current) == identity for current in observed)
+        if len(final_matches) == 1 and observed_matches == 1:
+            index = final_matches[0]
+            merged[index] = _merge_available(item, merged[index])
+        elif not final_matches:
+            merged.append(item.copy())
+    return merged
+
+
+def _observe_item(items: list[dict[str, Any]], item: dict[str, Any]) -> None:
+    identity = _item_id(item)
+    matches = [i for i, current in enumerate(items) if identity is not None and _item_id(current) == identity]
+    if len(matches) == 1:
+        items[matches[0]] = _merge_available(items[matches[0]], item)
+    else:
+        items.append(item.copy())
+
+
 def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, started: float) -> Iterator[str]:
     result_data = {
         "answer": "", "knowledge_base": kb["name"], "acl_applied": body.use_acl and bool(user_token),
@@ -608,6 +724,7 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
         response.encoding = "utf-8"
         completed = None
         raw_activity: list[dict[str, Any]] = []
+        raw_references: list[dict[str, Any]] = []
         activity_started: dict[str | int, int] = {}
         activity_timings: dict[str | int, dict[str, Any]] = {}
         for name, data in read_sse(response.iter_lines(chunk_size=1, decode_unicode=True)):
@@ -618,6 +735,7 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
                     ) if data.get(key) is not None
                 ) or None)
             elif name in ("activity.started", "activity.completed"):
+                _observe_item(raw_activity, data)
                 activity = summarize_activity({"activity": [data]})[0]
                 activity["status"] = "in_progress" if name.endswith("started") else "completed"
                 activity_id = activity.get("id")
@@ -638,7 +756,6 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
                 if name.endswith("started"):
                     yield log_event(started, "retrieval", f"Avviata: {_activity_label(data)}")
                 else:
-                    raw_activity.append(data)
                     yield log_event(
                         started, "retrieval", f"Completata: {_activity_label(data)}", _activity_detail(data),
                         level="error" if data.get("error") else "info",
@@ -647,6 +764,7 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
                         yield log_event(started, "retrieval", f"Query eseguita su {_activity_label(data)}",
                                         activity["query"], private=True)
             elif name == "references.completed" and isinstance(data, list):
+                raw_references = data
                 references = summarize_references({"references": data, "activity": raw_activity})
                 result_data["references"] = references
                 yield sse_event("references", {"items": references})
@@ -661,6 +779,11 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
         if completed is None:
             raise RuntimeError("Stream retrieve interrotto prima del completamento.")
         response.close()
+        completed = {
+            **completed,
+            "activity": _merge_observed(completed.get("activity") or [], raw_activity),
+            "references": _merge_observed(completed.get("references") or [], raw_references),
+        }
         activity = summarize_activity(completed)
         for item in activity:
             activity_id = item.get("id")
@@ -727,17 +850,6 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
             response.close()
 
 
-def _tool_event(item: dict[str, Any], arguments: str | None = None) -> dict[str, Any]:
-    action = _as_dict(item.get("action"))
-    return {
-        "id": item.get("id"), "type": item["type"],
-        "name": item.get("name") or item.get("server_label") or item["type"].removesuffix("_call"),
-        "server": item.get("server_label"), "status": item.get("status"),
-        "arguments": _short(item.get("arguments") or action.get("query") or action.get("queries")) or arguments,
-        "error": _short(item.get("error")),
-    }
-
-
 def _tool_result_detail(item: dict[str, Any]) -> str | None:
     results = item.get("results")
     if isinstance(results, list):
@@ -756,9 +868,12 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
     try:
         yield sse_event("status", {"stage": "Esecuzione agente e tool"})
         yield log_event(started, "agent", f"Richiesta inviata all'agente {body.agent}", "identità del progetto, nessun token utente")
-        tool_numbers: dict[str, int] = {}
+        tool_numbers: dict[tuple[type, str | int], int] = {}
         tool_started: dict[str | int, int] = {}
-        arguments: dict[str, str] = {}
+        arguments: dict[tuple[type, str | int], str] = {}
+        observed_items: list[dict[str, Any]] = []
+        observed_tools: dict[tuple[type, str | int], dict[str, Any]] = {}
+        observed_citations: list[dict[str, Any]] = []
         with agents_client().responses.create(
             input=[{"role": m.role, "content": m.content} for m in body.messages],
             extra_body={"agent_reference": {"name": body.agent, "type": "agent_reference"}}, stream=True,
@@ -779,9 +894,13 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                     kind = item.get("type") or ""
                     done = event.type.endswith("done")
                     if kind.endswith("_call"):
-                        key = str(item.get("id"))
-                        tool_numbers.setdefault(key, len(tool_numbers) + 1)
-                        tool = _tool_event(item, arguments.get(key))
+                        key = _item_id(item)
+                        if key is not None:
+                            tool_numbers.setdefault(key, len(tool_numbers) + 1)
+                            _observe_item(observed_items, item)
+                        elif done:
+                            observed_items.append(item.copy())
+                        tool = _tool_event(item, arguments.get(key) if key is not None else None)
                         now_ms = round((time.perf_counter() - started) * 1000)
                         tool_id = item.get("id")
                         if type(tool_id) in (str, int) and tool_id != "":
@@ -792,8 +911,10 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                                 if tool_id in tool_started:
                                     tool["started_ms"] = tool_started[tool_id]
                                     tool["duration_ms"] = now_ms - tool["started_ms"]
+                        if key is not None:
+                            observed_tools[key] = _merge_available(observed_tools.get(key, {}), tool)
                         yield sse_event("tool", tool)
-                        label = f"{tool['name']}" + (f" ({tool['server']})" if tool["server"] else "")
+                        label = str(tool["name"] or "tool") + (f" ({tool['server']})" if tool["server"] else "")
                         if not done:
                             yield log_event(started, "tool", f"Chiamata tool avviata: {label}", kind)
                             continue
@@ -805,8 +926,11 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                         if tool["arguments"] and key not in arguments:
                             yield log_event(started, "tool", f"Argomenti di {label}", tool["arguments"], private=True)
                         if kind == "mcp_call" and item.get("name") == "knowledge_base_retrieve":
-                            references = _knowledge_references(item.get("output"), tool_numbers[key])
+                            number = tool_numbers.get(key)
+                            references = _knowledge_references(item.get("output"), number, tool)
                             yield sse_event("references", {"items": references, "append": True})
+                            for activity in _knowledge_mcp_activity(item.get("output"), number, tool):
+                                yield sse_event("activity", activity)
                             yield log_event(started, "tool", f"Riferimenti Foundry IQ ricevuti: {len(references)}",
                                             _reference_titles(references))
                     elif kind == "mcp_list_tools":
@@ -826,20 +950,50 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                     elif kind.endswith("_output") and done:
                         yield log_event(started, "tool", f"Risultato ricevuto: {kind}", _tool_result_detail(item))
                 elif event.type in ("response.mcp_call_arguments.done", "response.function_call_arguments.done"):
-                    key = str(getattr(event, "item_id", None))
-                    args = _short(getattr(event, "arguments", None))
+                    key = _item_id({"id": getattr(event, "item_id", None)})
+                    args = getattr(event, "arguments", None)
+                    if not isinstance(args, str):
+                        args = None
                     if args:
-                        arguments[key] = args
+                        if key is not None:
+                            arguments[key] = args
                         yield log_event(started, "tool", "Argomenti inviati al tool", args, private=True)
                 elif event.type == "response.output_text.annotation.added":
                     note = _as_dict(getattr(event, "annotation", None))
                     title = note.get("title") or note.get("filename") or note.get("url") or note.get("file_id")
                     if title:
                         citation = {"title": title, "url": note.get("url"), "type": note.get("type")}
+                        observed_citations.append(citation)
                         yield sse_event("citation", citation)
                         yield log_event(started, "generation", f"Citazione: {_citation_title(str(title))}", note.get("type"))
                 elif event.type == "response.completed":
-                    result = agent_result(body, event.response, started)
+                    response_data = _as_dict(event.response)
+                    output = [_as_dict(item) for item in response_data.get("output") or []]
+                    final_calls = [item for item in output if str(item.get("type") or "").endswith("_call")]
+                    merged_calls = _merge_observed(final_calls, observed_items)
+                    for item in merged_calls:
+                        key = _item_id(item)
+                        if not item.get("arguments") and key in arguments:
+                            item["arguments"] = arguments[key]
+                    calls = iter(merged_calls)
+                    response_data["output"] = [
+                        next(calls) if str(item.get("type") or "").endswith("_call") else item for item in output
+                    ] + list(calls)
+                    result = agent_result(body, response_data, started)
+                    for call in result["tool_calls"]:
+                        key = _item_id(call)
+                        if key in observed_tools:
+                            call.update(_merge_available(observed_tools[key], call))
+                    for reference in result["references"]:
+                        key = _item_id({"id": reference.get("tool_call_id")})
+                        matches = [call for call in result["tool_calls"] if key is not None and _item_id(call) == key]
+                        if len(matches) == 1:
+                            reference["mcp_call"] = matches[0].copy()
+                    for citation in observed_citations:
+                        identity = (citation.get("type"), citation.get("url") or citation.get("title"))
+                        if not any((item.get("type"), item.get("url") or item.get("title")) == identity
+                                   for item in result["citations"]):
+                            result["citations"].append(citation)
                     usage = result.get("usage") or {}
                     yield log_event(started, "done", "Risposta completata", " · ".join([
                         f"{len(result.get('tool_calls') or [])} chiamate tool",
@@ -901,184 +1055,8 @@ def streaming_response(events: Iterable[str]) -> StreamingResponse:
     })
 
 
-def _as_dict(item: Any) -> dict[str, Any]:
-    if isinstance(item, Mapping):
-        return dict(item)
-    dump = getattr(item, "model_dump", None)
-    return dump() if callable(dump) else {}
-
-
-def _short(value: Any, limit: int = 300) -> str | None:
-    if value in (None, "", [], {}):
-        return None
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    return text if len(text) <= limit else text[:limit] + "…"
-
-
-_SOURCE_MARKER = re.compile(r"【\d+:\d+†[^】]+】")
-
-
-def _knowledge_reference_records(value: Any, marker: str | None = None):
-    if isinstance(value, str):
-        decoder = json.JSONDecoder()
-        position = 0
-        while position < len(value):
-            while position < len(value) and value[position].isspace():
-                position += 1
-            found = _SOURCE_MARKER.match(value, position)
-            if found:
-                marker = found.group()
-                position = found.end()
-                continue
-            if position == len(value):
-                break
-            try:
-                parsed, end = decoder.raw_decode(value, position)
-            except json.JSONDecodeError:
-                found = _SOURCE_MARKER.search(value, position)
-                if not found:
-                    return
-                marker = found.group()
-                position = found.end()
-                continue
-            if not isinstance(parsed, str) or parsed != value[position:end]:
-                yield from _knowledge_reference_records(parsed, marker)
-            marker = None
-            position = end
-    elif isinstance(value, list):
-        for item in value:
-            yield from _knowledge_reference_records(item)
-    elif isinstance(value, Mapping):
-        source_fields = ("sourceData", "uri", "url", "web_url", "blob_url", "blobUrl", "uid", "document_id")
-        has_source_data = any(key in value for key in source_fields)
-        has_reference = value.get("ref_id") is not None and has_source_data
-        has_marked_document = marker and has_source_data
-        if has_reference or has_marked_document:
-            yield value, marker
-        elif isinstance(value.get("documents"), list):
-            for document in value["documents"]:
-                if isinstance(document, Mapping) and any(key in document for key in source_fields):
-                    yield document, marker
-        elif isinstance(value.get("content"), list):
-            yield from _knowledge_reference_records(value["content"], marker)
-        elif value.get("type") == "text" and isinstance(value.get("text"), str):
-            yield from _knowledge_reference_records(value["text"], marker)
-        elif isinstance(value.get("result"), (Mapping, list, str)):
-            yield from _knowledge_reference_records(value["result"], marker)
-
-
-def _document_source(record: Mapping[str, Any]) -> dict[str, Any]:
-    """Merges the JSON fields that the MCP tool serializes inside a document's content."""
-    source = _as_dict(record.get("sourceData")) or dict(record)
-    content = source.get("content")
-    if isinstance(content, str) and content.lstrip().startswith("{"):
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, Mapping):
-            source = {**parsed, **{key: value for key, value in source.items() if key != "content"}}
-    if str(source.get("title") or "").startswith("http"):
-        source.pop("title")
-    return source
-
-
 def _citation_title(title: str) -> str:
     return unquote(title.rstrip("/").split("/")[-1]) if title.startswith("http") else title
-
-
-def _knowledge_references(output: Any, call_number: int) -> list[dict[str, Any]]:
-    references = []
-    for record, marker in _knowledge_reference_records(output):
-        source = _document_source(record)
-        raw = {
-            "id": record.get("ref_id") if record.get("ref_id") is not None else record.get("id"),
-            "type": record.get("kind"),
-            "blobUrl": source.get("blob_url") or source.get("blobUrl"),
-            "url": source.get("url") or source.get("web_url") or record.get("uri"),
-            "sourceData": source,
-            "docKey": source.get("uid") or source.get("document_id") or marker,
-        }
-        reference = summarize_references({"references": [raw]})[0]
-        reference["knowledge_source"] = record.get("knowledgeSourceName") or source.get("knowledgeSourceName")
-        reference["tool_call"] = call_number
-        if marker:
-            reference["marker"] = marker
-        references.append(reference)
-    return references
-
-
-def _utf16_length(text: str) -> int:
-    return len(text.encode("utf-16-le", errors="surrogatepass")) // 2
-
-
-def summarize_agent_output(response: Any) -> dict[str, Any]:
-    """Extracts answer, tool calls and citations from a Responses API result (any tool type)."""
-    data = _as_dict(response)
-    answer_parts: list[str] = []
-    answer_length = 0
-    tool_calls: list[dict[str, Any]] = []
-    citations: list[dict[str, Any]] = []
-    citation_indices: dict[tuple[str, str], int] = {}
-    citation_spans: list[dict[str, int]] = []
-    references: list[dict[str, Any]] = []
-    for item in data.get("output") or []:
-        item = _as_dict(item)
-        kind = item.get("type") or ""
-        if kind == "message":
-            for content in item.get("content") or []:
-                content = _as_dict(content)
-                text = content.get("text")
-                offset = None
-                if isinstance(text, str) and text:
-                    offset = answer_length + (1 if answer_parts else 0)
-                    answer_parts.append(text)
-                    answer_length = offset + _utf16_length(text)
-                for note in content.get("annotations") or []:
-                    note = _as_dict(note)
-                    key = note.get("url") or note.get("file_id") or note.get("filename") or note.get("title")
-                    if not isinstance(key, str) or not key:
-                        continue
-                    identity = (str(note.get("type") or ""), key)
-                    if identity not in citation_indices:
-                        citation_indices[identity] = len(citations)
-                        citations.append({"title": note.get("title") or note.get("filename") or key,
-                                          "url": note.get("url"), "type": note.get("type")})
-                    start, end = note.get("start_index"), note.get("end_index")
-                    if offset is not None and type(start) is int and type(end) is int and 0 <= start < end <= len(text):
-                        citation_spans.append({
-                            "start": offset + _utf16_length(text[:start]),
-                            "end": offset + _utf16_length(text[:end]),
-                            "citation_index": citation_indices[identity],
-                        })
-                    elif offset is not None and note.get("type") == "file_citation":
-                        index = note.get("index")
-                        if type(index) is int and 0 <= index <= len(text):
-                            position = offset + _utf16_length(text[:index])
-                            citation_spans.append({
-                                "start": position, "end": position, "citation_index": citation_indices[identity],
-                            })
-        elif kind.endswith("_call"):
-            action = _as_dict(item.get("action"))
-            tool_calls.append({
-                "id": item.get("id"), "type": kind,
-                "name": item.get("name") or item.get("server_label") or kind.removesuffix("_call"),
-                "server": item.get("server_label"),
-                "arguments": _short(item.get("arguments") or action.get("query") or action.get("queries")),
-                "status": item.get("status"),
-                "error": _short(item.get("error")),
-            })
-            if kind == "mcp_call" and item.get("name") == "knowledge_base_retrieve":
-                references.extend(_knowledge_references(item.get("output"), len(tool_calls)))
-    usage = _as_dict(data.get("usage"))
-    return {
-        "answer": "\n".join(answer_parts) or data.get("output_text") or "",
-        "tool_calls": tool_calls,
-        "citations": citations,
-        "citation_spans": citation_spans,
-        "references": references,
-        "usage": {k: usage.get(k) for k in ("input_tokens", "output_tokens", "total_tokens") if usage.get(k) is not None},
-    }
 
 
 app = FastAPI(title="WPC Foundry IQ chat")
@@ -1096,7 +1074,7 @@ async def require_app_service_login(request: Request, call_next):
         if not request.headers.get("x-ms-client-principal-id"):
             return JSONResponse(status_code=401, content={"detail": "Accesso richiesto."})
     response = await call_next(request)
-    if request.url.path == "/api/config":
+    if request.url.path in ("/api/config", "/api/profile/group-names"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -1131,6 +1109,22 @@ def config(request: Request) -> dict[str, Any]:
         "agents": [{"name": name, **info} for name, info in AGENTS.items()],
         "agents_available": bool(PROJECT_ENDPOINT),
         "chat_deployment": CHAT_DEPLOYMENT,
+    }
+
+
+@app.get("/api/profile/group-names")
+def profile_group_names(request: Request) -> dict[str, Any]:
+    try:
+        profile = current_user(request)["profile"]
+    except (AzureError, ValueError) as exc:
+        logger.warning("Profilo utente non disponibile per Microsoft Graph: %s", type(exc).__name__)
+        raise HTTPException(status_code=401, detail="Profilo utente non disponibile: accedi di nuovo.") from exc
+    return {
+        "object_id": profile["object_id"],
+        "tenant_id": profile["tenant_id"],
+        "groups": profile["groups"],
+        "groups_status": profile["groups_status"],
+        **resolve_group_names(profile["groups"]),
     }
 
 

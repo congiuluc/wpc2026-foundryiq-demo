@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { CheckIcon, ClockIcon, CopyIcon, FlowIcon, GlobeIcon, LayersIcon, ShieldIcon, SparkIcon, TokenIcon, ToolIcon } from "./UiIcons";
-import type { Agent, ChatResult, CitationSpan, Entry, Reference, SourceSummary, TimelineEvent, ToolCall } from "./types";
+import { activityKey, mergeAvailable } from "./stream";
+import type { Activity, Agent, ChatResult, CitationSpan, Entry, Reference, SourceSummary, TimelineEvent, ToolCall } from "./types";
 
 const sourceKinds: Record<string, [string, string]> = {
   azureBlob: ["blob", "Blob"], searchIndex: ["search", "Indice"], indexedSharePoint: ["sharepoint", "SharePoint"],
@@ -138,16 +139,136 @@ function Sources({ sources, agent }: { sources?: SourceSummary[]; agent?: Agent 
   </div>;
 }
 
-function References({ items, agent, citationCount, linkedCount, toolReferencesMissing, detailsRef, refsMap }: { items: Reference[]; agent: boolean; citationCount: number; linkedCount: number; toolReferencesMissing: boolean; detailsRef: RefObject<HTMLDetailsElement | null>; refsMap: RefObject<Map<number, HTMLLIElement>> }) {
-  return <details className="references-details" ref={detailsRef} open={items.length > 0 && items.length <= 3}>
+function detailValue(value: unknown): string {
+  if (value == null) return "Non disponibile";
+  if (typeof value === "string") return value || "Non disponibile";
+  return JSON.stringify(value) ?? "Non disponibile";
+}
+
+function McpToolDetails({ call, heading }: { call: ToolCall; heading: string }) {
+  const rows: [string, string][] = [
+    ["ID", call.id == null || call.id === "" ? "Non disponibile" : String(call.id)],
+    ["Server", call.server || "Non disponibile"],
+    ["Tool", call.name || "Non disponibile"],
+    ["Argomenti", call.arguments ?? "Non disponibili"],
+    ["Stato", call.status ? statusNames[call.status] || call.status : "Non disponibile"],
+    ["Risultati", typeof call.result_count === "number" ? `${call.result_count} risultati` : "Non disponibili"],
+    ["Durata", typeof call.duration_ms === "number" ? `${call.duration_ms} ms (misurata dalla chat)` : "Non disponibile"],
+  ];
+  if (typeof call.started_ms === "number") rows.push(["Inizio osservato", `${call.started_ms} ms dall'avvio della risposta`]);
+  if (typeof call.completed_ms === "number") rows.push(["Fine osservata", `${call.completed_ms} ms dall'avvio della risposta`]);
+  if (call.error) rows.push(["Errore", call.error]);
+  return <div className="reference-mcp">
+    <strong>{heading}</strong>
+    <dl className="tool-call-data">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+  </div>;
+}
+
+type SourceMcp = {
+  source?: string | null;
+  activityId?: string | number | null;
+  tool?: string | null;
+  arguments?: Record<string, unknown> | null;
+  count?: number | null;
+  elapsed?: number | null;
+  started?: string | null;
+  completed?: string | null;
+  error?: unknown;
+  warning?: string | null;
+  status?: string | null;
+  duration?: number | null;
+  startedOffset?: number | null;
+  completedOffset?: number | null;
+  parentCallId?: string | number | null;
+};
+
+function SourceMcpDetails({ call }: { call: SourceMcp }) {
+  const rows: [string, string][] = [
+    ["Knowledge source", call.source || "Non disponibile"],
+    ["ID attività", call.activityId == null ? "Non disponibile" : String(call.activityId)],
+    ["Tool", call.tool || "Non disponibile"],
+    ["Argomenti", call.arguments == null ? "Non disponibili" : detailValue(call.arguments)],
+    ["Risultati", typeof call.count === "number" ? `${call.count} risultati` : "Non disponibili"],
+    ["Durata", typeof call.elapsed === "number" ? `${call.elapsed} ms (servizio)` : "Non disponibile"],
+  ];
+  if (call.started) rows.push(["Inizio", call.started]);
+  if (call.completed) rows.push(["Fine", call.completed]);
+  if (call.status) rows.push(["Stato", statusNames[call.status] || call.status]);
+  if (typeof call.startedOffset === "number") rows.push(["Inizio osservato", `${call.startedOffset} ms dall'avvio della risposta`]);
+  if (typeof call.completedOffset === "number") rows.push(["Fine osservata", `${call.completedOffset} ms dall'avvio della risposta`]);
+  if (typeof call.duration === "number") rows.push(["Durata osservata dalla chat", `${call.duration} ms`]);
+  if (call.parentCallId != null && call.parentCallId !== "") rows.push(["ID chiamata knowledge base", String(call.parentCallId)]);
+  if (call.error != null) rows.push(["Errore", detailValue(call.error)]);
+  if (call.warning) rows.push(["Avviso", call.warning]);
+  return <div className="reference-mcp">
+    <strong>Chiamata server MCP della fonte</strong>
+    <dl className="tool-call-data">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+  </div>;
+}
+
+function sourceMcp(reference: Reference, activity: Activity[], agent: boolean): SourceMcp | null {
+  const key = activityKey(reference.activity_source, reference.tool_call_id, reference.tool_call, agent);
+  const matches = key == null ? [] : activity.filter(item => item.type === "mcpServer" && activityKey(item.id, item.tool_call_id, item.tool_call, agent) === key);
+  const observed = matches.length === 1 ? matches[0] : undefined;
+  if (reference.type !== "mcpServer" && reference.knowledge_source_type !== "mcpServer"
+      && !reference.mcp_tool && reference.mcp_arguments == null && !observed) return null;
+  return {
+    source: reference.knowledge_source ?? observed?.knowledgeSourceName, activityId: reference.activity_source,
+    tool: reference.mcp_tool ?? observed?.mcp_tool, arguments: reference.mcp_arguments ?? observed?.mcp_arguments,
+    count: reference.result_count ?? observed?.count, elapsed: reference.elapsed_ms ?? observed?.elapsedMs,
+    started: reference.mcp_started_at ?? observed?.startedAt, completed: reference.mcp_completed_at ?? observed?.completedAt,
+    status: reference.mcp_status ?? observed?.status, duration: observed?.duration_ms,
+    startedOffset: observed?.started_ms, completedOffset: observed?.completed_ms,
+    error: reference.mcp_error ?? observed?.error, warning: reference.mcp_warning ?? observed?.warning,
+    parentCallId: reference.tool_call_id,
+  };
+}
+
+function sourceActivity(activity: Activity): SourceMcp {
+  return {
+    source: activity.knowledgeSourceName, activityId: activity.id, tool: activity.mcp_tool,
+    arguments: activity.mcp_arguments, count: activity.count, elapsed: activity.elapsedMs,
+    started: activity.startedAt, completed: activity.completedAt, error: activity.error, warning: activity.warning,
+    status: activity.status, duration: activity.duration_ms, startedOffset: activity.started_ms,
+    completedOffset: activity.completed_ms, parentCallId: activity.tool_call_id,
+  };
+}
+
+function associatedCallIndex(reference: Reference, calls: ToolCall[]): number {
+  if (reference.tool_call_id != null && reference.tool_call_id !== "") {
+    const matches = calls.flatMap((call, index) => call.id === reference.tool_call_id && call.type === "mcp_call" ? [index] : []);
+    return matches.length === 1 ? matches[0] : -1;
+  }
+  if (reference.mcp_call && (reference.mcp_call.id == null || reference.mcp_call.id === "")) return -1;
+  const index = (reference.tool_call ?? 0) - 1;
+  return Number.isInteger(index) && calls[index]?.type === "mcp_call" ? index : -1;
+}
+
+function References({ items, calls, activity, agent, citationCount, linkedCount, toolReferencesMissing, detailsRef, refsMap }: { items: Reference[]; calls: ToolCall[]; activity: Activity[]; agent: boolean; citationCount: number; linkedCount: number; toolReferencesMissing: boolean; detailsRef: RefObject<HTMLDetailsElement | null>; refsMap: RefObject<Map<number, HTMLLIElement>> }) {
+  const associated = new Set(items.map((item) => associatedCallIndex(item, calls)).filter((index) => index >= 0));
+  const unlinkedCalls = calls.filter((call, index) => call.type === "mcp_call" && !associated.has(index));
+  const sourceIds = new Set(items.map(item => activityKey(item.activity_source, item.tool_call_id, item.tool_call, agent)).filter(key => key != null));
+  const unlinkedActivity = activity.filter(item => {
+    if (item.type !== "mcpServer") return false;
+    const key = activityKey(item.id, item.tool_call_id, item.tool_call, agent);
+    return key == null || !sourceIds.has(key)
+      || activity.filter(other => other.type === "mcpServer" && activityKey(other.id, other.tool_call_id, other.tool_call, agent) === key).length !== 1;
+  });
+  return <details className="references-details" ref={detailsRef} open={(items.length > 0 && items.length <= 3) || unlinkedCalls.length > 0 || unlinkedActivity.length > 0}>
     <summary>{agent ? "Citazioni e riferimenti" : "Riferimenti"} ({items.length})</summary>
     {agent && linkedCount < citationCount && <p className="reference-note">Le citazioni senza posizioni valide restano nell'elenco senza collegamento al testo.</p>}
     {agent && items.length > citationCount && <p className="reference-note">I riferimenti sono restituiti dal tool: non tutti sono necessariamente citati nella risposta.</p>}
     {toolReferencesMissing && <p className="reference-note">Il tool non ha esposto riferimenti utilizzabili per questa risposta.</p>}
+    {agent && citationCount > 0 && unlinkedCalls.length > 0 && <p className="reference-note">Le chiamate senza collegamento esplicito non sono attribuite alle citazioni.</p>}
     {!items.length ? <p>{agent ? "Nessuna citazione o riferimento disponibile nella risposta." : "Nessun documento restituito."}</p> : <ul className="refs reference-list">
       {items.map((item, index) => {
         const url = item.url && safeUrl(item.url);
         const title = item.title || item.id || item.url || "Titolo non disponibile";
+        const callIndex = associatedCallIndex(item, calls);
+        const liveCall = callIndex >= 0 ? calls[callIndex] : null;
+        const embeddedCall = item.mcp_call && (item.tool_call_id == null || item.tool_call_id === "" || item.mcp_call.id === item.tool_call_id) ? item.mcp_call : null;
+        const call = liveCall && embeddedCall ? mergeAvailable(embeddedCall, liveCall) : liveCall || embeddedCall;
+        const source = sourceMcp(item, activity, agent);
         return <li key={index} ref={(node) => { if (node) refsMap.current.set(index, node); else refsMap.current.delete(index); }} className="reference-card" tabIndex={-1}>
           <div className="reference-top"><span className="reference-id">{agent && index < citationCount ? `Citazione C${index + 1}` : item.id == null ? "ID non disponibile" : `Rif. ${item.id}`}</span>
             {item.marker && <span className="reference-kind">{item.marker}</span>}
@@ -157,12 +278,19 @@ function References({ items, agent, citationCount, linkedCount, toolReferencesMi
           <div className="reference-title">{url ? <a href={url} target="_blank" rel="noopener noreferrer">{title} <span className="reference-external">↗ <span className="sr-only">(si apre in una nuova scheda)</span></span></a> : <strong>{title}</strong>}</div>
           {item.path && !url && <div className="reference-path">{(item.knowledge_source_type || item.type || "").includes("SharePoint") ? "Raccolta SharePoint" : "Percorso"}: {item.path}</div>}
           {typeof item.score === "number" && <div className="reference-path">Pertinenza (reranker semantico): {item.score.toLocaleString("it-IT", { maximumFractionDigits: 2 })} / 4</div>}
-          {item.mcp_tool && <div className="reference-path reference-mcp">Chiamata server MCP: <code>{item.mcp_tool}</code>
-            {item.mcp_arguments && Object.keys(item.mcp_arguments).length > 0 && <> ({Object.entries(item.mcp_arguments).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ")})</>}
-            {(typeof item.result_count === "number" || typeof item.elapsed_ms === "number") && <> · {[typeof item.result_count === "number" ? `${item.result_count} risultati` : null, typeof item.elapsed_ms === "number" ? `${item.elapsed_ms} ms` : null].filter(Boolean).join(" · ")}</>}</div>}
+          {call && <McpToolDetails call={call} heading={call.name === "knowledge_base_retrieve" ? "Chiamata alla knowledge base MCP" : "Chiamata MCP associata"} />}
+          {!call && item.tool_call != null && <p className="reference-note">Dettagli della chiamata MCP non disponibili.</p>}
+          {source && <SourceMcpDetails call={source} />}
+          {call?.name === "knowledge_base_retrieve" && !source && <p className="reference-note">Le chiamate interne alle fonti sono disponibili solo se restituite dal tool.</p>}
         </li>;
       })}
     </ul>}
+    {(unlinkedCalls.length > 0 || unlinkedActivity.length > 0) && <section className="reference-mcp-unlinked">
+      <h3>Chiamate MCP non associate a riferimenti</h3>
+      <p className="reference-note">Le chiamate senza riferimenti restano osservabili, ma non costituiscono citazioni.</p>
+      {unlinkedCalls.map((call, index) => <McpToolDetails key={`call-${index}`} call={call} heading="Chiamata MCP" />)}
+      {unlinkedActivity.map((item, index) => <SourceMcpDetails key={`activity-${index}`} call={sourceActivity(item)} />)}
+    </section>}
   </details>;
 }
 
@@ -212,11 +340,18 @@ function AgentCalls({ calls }: { calls?: ToolCall[] }) {
 }
 
 const phaseNames: Record<string, string> = { retrieval: "Retrieval", generation: "Generazione", agent: "Agente", tool: "Tool", done: "Esito" };
-function Timeline({ events, loading }: { events?: TimelineEvent[]; loading: boolean }) {
+function Timeline({ events, loading, console: asConsole = false }: { events?: TimelineEvent[]; loading: boolean; console?: boolean }) {
+  const list = useRef<HTMLOListElement | null>(null);
+  const follow = useRef(true);
+  useEffect(() => {
+    if (loading && follow.current && list.current) list.current.scrollTop = list.current.scrollHeight;
+  }, [events?.length, loading]);
   if (!events?.length) return null;
-  return <details className="timeline" open={loading}>
+  return <details className={`timeline${loading && asConsole ? " timeline-console" : ""}`} open={loading}>
     <summary>Eventi in tempo reale ({ints.format(events.length)})</summary>
-    <ol>{events.map((item, i) => <li key={i} className={`timeline-item level-${item.level || "info"}`}>
+    <ol ref={list} role="log" aria-label="Stream degli eventi" aria-live={loading ? "polite" : "off"} tabIndex={0}
+      onScroll={() => { const node = list.current; if (node) follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24; }}>
+      {events.map((item, i) => <li key={i} className={`timeline-item level-${item.level || "info"}`}>
       <span className="timeline-time">+{seconds.format(item.at_ms / 1000)} s</span>
       <span className={`timeline-phase phase-${item.phase}`}>{phaseNames[item.phase] || item.phase}</span>
       <span className="timeline-text"><strong>{item.title}</strong>{item.detail && <span className="timeline-detail">{item.detail}</span>}</span>
@@ -288,16 +423,25 @@ export function AnswerCard({ entry, question, onInfographic }: { entry: Entry; q
         {result?.answer && <button type="button" className={`icon-button copy-btn ${copied ? "copied" : ""}`} aria-label={copied ? "Risposta copiata" : "Copia risposta"} title={copied ? "Copiato" : "Copia risposta"} onClick={copyAnswer}>{copied ? <CheckIcon /> : <CopyIcon />}</button>}
       </div>
     </div>
-    {loading && <Loading agent={agent} status={result?.timeline?.at(-1)?.title || entry.status} hasText={!!result?.answer} />}
+    {agent && loading && <Loading agent={agent} status={result?.timeline?.at(-1)?.title || entry.status} hasText={!!result?.answer} />}
     {error && <p className="answer-error-msg">{error}</p>}
+    {!agent && loading && !result && <Loading status={entry.status} />}
     {result && <>
       {result.streaming?.warning && <p className="warning" role="status">{result.streaming.warning} {result.streaming.usage_scope}</p>}
-      <Timeline events={result.timeline} loading={loading} />
-      {agent && <><AgentMetrics result={result} /><p className="agent-desc"><strong>Configurazione:</strong> {agent.description}</p></>}
-      {(!loading || result.answer) && <Markdown text={annotated.text} refs={refs} navigate={navigate} annotations={agent ? { separator: annotated.separator, citations, navigate: navigateIndex } : undefined} />}
+      {agent ? <>
+        <Timeline events={result.timeline} loading={loading} />
+        <AgentMetrics result={result} /><p className="agent-desc"><strong>Configurazione:</strong> {agent.description}</p>
+        {(!loading || result.answer) && <Markdown text={annotated.text} refs={refs} navigate={navigate} annotations={{ separator: annotated.separator, citations, navigate: navigateIndex }} />}
+      </> : <div className={`answer-processing${loading && result.timeline?.length ? " with-console" : ""}`}>
+        <div className="answer-output">
+          {loading && <Loading status={result.timeline?.at(-1)?.title || entry.status} hasText={!!result.answer} />}
+          {(!loading || result.answer) && <Markdown text={annotated.text} refs={refs} navigate={navigate} />}
+        </div>
+        <Timeline events={result.timeline} loading={loading} console />
+      </div>}
       {(!loading || result.sources) && (!agent || agent.kind === "foundryiq") && <Sources sources={result.sources} agent={agent} />}
       {agent && <details><summary>Dettaglio delle chiamate ({Array.isArray(result.tool_calls) ? result.tool_calls.length : "non disponibile"})</summary><p className="meta">ID agente: <code>{result.agent}</code></p><AgentCalls calls={result.tool_calls} /></details>}
-      <References items={items} agent={!!agent} citationCount={agent ? citations.length : 0} linkedCount={annotated.linked.size}
+      <References items={items} calls={result.tool_calls || []} activity={result.activity || []} agent={!!agent} citationCount={agent ? citations.length : 0} linkedCount={annotated.linked.size}
         toolReferencesMissing={!!agent && !result.references?.length && !!result.tool_calls?.some((tool) => tool.type === "mcp_call" && tool.name === "knowledge_base_retrieve")}
         detailsRef={detailsRef} refsMap={nodes} />
       {!agent && <details open={loading}><summary>Attività Foundry IQ</summary>

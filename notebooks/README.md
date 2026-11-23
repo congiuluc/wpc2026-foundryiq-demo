@@ -62,7 +62,7 @@ AZD_ENVIRONMENT_NAME = ""  # ambiente selezionato; oppure "nome-ambiente"
 
 Il caricamento precompila `SUBSCRIPTION_ID`, `ENVIRONMENT_NAME` e `DEPLOYMENT_NAME` (`AZURE_DEPLOYMENT_NAME`, se disponibile, altrimenti `wpc-foundryiq-<ambiente>`). Nel notebook 01 precompila anche `LOCATION` e `RESOURCE_GROUP_NAME`; nel 03 i nomi delle KB e `SHAREPOINT_POLICIES_URL`. Puoi modificare le assegnazioni nella stessa cella per sovrascrivere questi valori. `BICEP_PARAMETERS` e i flag `RUN_*` restano espliciti: **il caricamento non avvia il deploy**. Con `LOAD_AZD_ENV = False` (default), azd non viene chiamato e restano i valori manuali; i notebook 02 e 03 continuano a leggere gli endpoint dagli output ARM. Per un deployment creato da azd indica il suo nome ARM effettivo in `DEPLOYMENT_NAME`, se diverso da quello calcolato.
 
-I **quattro notebook demo/test** usano lo stesso helper automaticamente con `CONFIG_SOURCE = "azd"`; con `"arm"` non leggono azd.
+I **quattro notebook demo/test** usano lo stesso helper automaticamente con `CONFIG_SOURCE = "azd"`; con `"env"` leggono `notebooks/demo/.env` tramite `load_env_file` (stesso filtro `AZD_KEYS`) e con `"arm"` non leggono azd.
 
 L'helper è riutilizzabile da una cella di altri notebook nel repository:
 
@@ -96,6 +96,7 @@ Esegui i tre notebook nell'ordine mantenendo lo stesso `ENVIRONMENT_NAME` (defau
 I notebook dimostrativi sono indipendenti tra loro: i primi tre corrispondono alle route dedicate della [chat web app](../webapp-chat/README.md), mentre l'esempio SDK interroga direttamente la KB. Nella prima cella scegli la fonte della configurazione:
 
 - **Ambiente azd** (default): `CONFIG_SOURCE = "azd"` e `AZD_ENVIRONMENT_NAME = ""` usano l'ambiente selezionato nella root del repository; indica un nome in `AZD_ENVIRONMENT_NAME` per usarne un altro senza cambiare la selezione. Gli endpoint, i nomi delle knowledge base e gli ID dei gruppi ACL sono letti dall'ambiente quando disponibili.
+- **File `.env`**: `CONFIG_SOURCE = "env"` legge `notebooks/demo/.env` (o il percorso in `ENV_FILE`) senza chiamare azd dal kernel. Generalo dalla root con `./notebooks/demo/New-NotebookEnv.ps1` (opzionale `-EnvironmentName <nome>`): [lo script](demo/New-NotebookEnv.ps1) legge l'ambiente azd, oppure `.deploy/<ambiente>.local.env` senza azd, e scrive solo le impostazioni non segrete di `AZD_KEYS`, senza token. Il file è ignorato da Git; rigeneralo dopo un nuovo deployment.
 - **Output ARM**: `CONFIG_SOURCE = "arm"` usa `DEPLOYMENT_NAME = "wpc-foundryiq-<ENVIRONMENT_NAME>"` oppure un nome personalizzato. È adatto agli ambienti creati con `notebooks/deploy/`; se gli ID dei gruppi non sono negli output, la demo ACL li cerca per nome o usa gli ID indicati in `GROUP_IDS`.
 
 Per entrambe le fonti serve una sessione Azure CLI autenticata. `SUBSCRIPTION_ID` è opzionale; con azd, se specificato, deve coincidere con la subscription dell'ambiente. Il tenant della configurazione è verificato prima delle chiamate, senza cambiare la subscription predefinita della CLI. Per la demo ACL anche il tenant predefinito della CLI deve coincidere, perché `az ad` usa quel contesto.
@@ -109,6 +110,8 @@ Per entrambe le fonti serve una sessione Azure CLI autenticata. `SUBSCRIPTION_ID
 
 Nell'esempio SDK, `KB_PROFILE` sceglie la KB multi-fonte o ACL; `QUERY_MODE = "auto"` usa rispettivamente `messages` o intenti semantici. Cambia la domanda quando scegli la KB ACL. Il client richiede la versione preview `azure-search-documents==12.2.0b1`; dopo l'installazione aggiorna o riavvia il kernel.
 
+I notebook multi-fonte, agenti e SDK mostrano nei riferimenti i dettagli MCP restituiti, inclusi gli argomenti completi. Le chiamate senza riferimenti restano nelle tabelle delle attività o delle chiamate e non sono attribuite a citazioni prive di un collegamento esplicito. Le chiamate interne della knowledge base sono visibili solo se il provider le restituisce.
+
 La demo multi-fonte mostra il modello configurato nella knowledge base (ad esempio `gpt-5.2` nell'ambiente corrente); la sintesi opzionale usa invece il deployment chat `FOUNDRYIQ_DEMO_CHAT_DEPLOYMENT`, disattivabile con `RUN_SYNTHESIS = False`.
 
 Le interrogazioni multi-fonte, anche dal notebook SDK, e degli agenti possono attivare il server MCP: con `SQL_AUTO_SEED=true`, alla prima lettura il servizio può creare o ricaricare il catalogo SQL se i dati di esempio sono cambiati. Vedi la [configurazione MCP](../mcp-ricambi/README.md).
@@ -117,7 +120,7 @@ Nei primi tre notebook ogni controllo registra un esito strutturato (`PASS`, `WA
 
 ## Sicurezza e pulizia dei notebook
 
-- Nessun token, chiave API o segreto viene stampato o salvato su disco: `MCP_API_KEY` viene letta in memoria dalle impostazioni dell'App Service solo quando necessario.
+- I notebook non stampano direttamente token o segreti di configurazione: `MCP_API_KEY` viene letta in memoria dalle impostazioni dell'App Service solo quando necessario. Risposte e argomenti dei tool possono però contenere dati riservati: controllali prima di condividere gli output.
 - Salva e committa sempre i notebook **senza output** delle celle (`Clear All Outputs`), come verificato dalla suite di test `scripts/tests/test_notebooks.py`:
 
 ```powershell

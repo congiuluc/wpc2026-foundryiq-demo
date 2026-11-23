@@ -9,13 +9,14 @@ const frontendRequire = createRequire(path.join(frontend, "package.json"));
 const React = frontendRequire("react");
 const { renderToStaticMarkup } = frontendRequire("react-dom/server");
 const originalMatchMedia = globalThis.matchMedia;
-let server, AnswerCard, Infographic;
+let server, AnswerCard, Infographic, Profile;
 
 before(async () => {
   const { createServer } = await import(pathToFileURL(frontendRequire.resolve("vite")).href);
   server = await createServer({ root: frontend, logLevel: "silent", server: { middlewareMode: true }, appType: "custom" });
   ({ AnswerCard } = await server.ssrLoadModule(path.join(frontend, "src", "Responses.tsx")));
   ({ Infographic } = await server.ssrLoadModule(path.join(frontend, "src", "Infographic.tsx")));
+  ({ Profile } = await server.ssrLoadModule(path.join(frontend, "src", "Layout.tsx")));
   globalThis.matchMedia = () => ({ matches: true });
 });
 
@@ -46,6 +47,23 @@ function diagram(overrides = {}) {
   };
   return renderToStaticMarkup(React.createElement(Infographic, { data, onClose() {} }));
 }
+
+test("profile distinguishes missing group claims and overage without inventing memberships", () => {
+  const render = (groups_status, groups) => renderToStaticMarkup(React.createElement(Profile, {
+    config: {
+      user_token_available: true, running_on_app_service: true, knowledge_bases: [], agents: [],
+      user_profile: { groups, groups_status, roles: [] },
+    },
+    open: true,
+    onClose() {},
+  }));
+  const overage = render("overage", ["group-1"]);
+  assert.match(overage, /Elenco incompleto/);
+  assert.match(overage, /senza cercare le altre appartenenze/);
+  assert.match(overage, /group-1/);
+  assert.match(render("unavailable", []), /non significa che l&#x27;utente non appartenga a gruppi/);
+  assert.match(render("available", []), /claim dei gruppi è presente ma vuoto/);
+});
 
 test("retry warning remains visible with its usage scope while loading and after completion", () => {
   for (const loading of [true, false]) {
@@ -237,6 +255,110 @@ test("missing knowledge-base tool references are reported as unavailable", () =>
     tool_calls: [{ type: "mcp_call", name: "knowledge_base_retrieve" }],
   }), { agent });
   assert.match(html, /Il tool non ha esposto riferimenti utilizzabili/);
+});
+
+test("reference cards show source MCP details including empty arguments and zero values", () => {
+  const html = answer(result({ references: [{
+    id: 1, type: "mcpServer", title: "Ricambio", knowledge_source: "ricambi-ks",
+    mcp_tool: "check_stock", mcp_arguments: {}, elapsed_ms: 0, result_count: 0,
+  }] }));
+  assert.match(html, /check_stock/);
+  assert.match(html, /Argomenti[^]*\{\}/);
+  assert.match(html, /0 risultati/);
+  assert.match(html, /0 ms/);
+});
+
+test("agent references show their associated MCP call and unrelated calls remain separate", () => {
+  const html = answer(result({
+    citations: [{ title: "Citazione esterna", url: "https://example.com" }],
+    references: [{ id: 3, title: "Ricambio", tool_call: 2, tool_call_id: "kb-1" }],
+    tool_calls: [
+      { id: "stock", type: "mcp_call", name: "check_stock", server: "ricambi",
+        arguments: '{"part_numbers":["GRT-002"]}', result_count: 0, status: "completed" },
+      { id: "kb-1", type: "mcp_call", name: "knowledge_base_retrieve", server: "kb",
+        arguments: '{"query":"pompa"}', status: "completed", started_ms: 0, completed_ms: 35, duration_ms: 35 },
+    ],
+  }), { agent });
+  assert.match(html, /Chiamata alla knowledge base MCP/);
+  assert.match(html, /knowledge_base_retrieve/);
+  assert.match(html, /35 ms/);
+  assert.match(html, /Inizio osservato[^]*0 ms/);
+  assert.match(html, /Fine osservata[^]*35 ms/);
+  assert.match(html, /Chiamate MCP non associate a riferimenti/);
+  assert.match(html, /check_stock/);
+  assert.match(html, /GRT-002/);
+  assert.match(html, /0 risultati/);
+});
+
+test("linked source activity exposes observed streaming timing", () => {
+  const html = answer(result({
+    references: [{ id: 0, type: "mcpServer", title: "Ricambio", activity_source: 3 }],
+    activity: [{ id: 3, type: "mcpServer", mcp_tool: "check_stock", status: "completed",
+      started_ms: 0, completed_ms: 25, duration_ms: 25 }],
+  }));
+  assert.match(html, /check_stock/);
+  assert.match(html, /Inizio osservato[^]*0 ms/);
+  assert.match(html, /Fine osservata[^]*25 ms/);
+  assert.match(html, /Durata osservata dalla chat[^]*25 ms/);
+});
+
+test("an MCP reference never borrows metadata from a different call", () => {
+  const html = answer(result({
+    references: [{ id: 3, title: "Ricambio", tool_call: 1, tool_call_id: "missing" }],
+    tool_calls: [{ id: "other", type: "mcp_call", name: "other_tool", server: "other" }],
+  }), { agent });
+  assert.match(html, /Dettagli della chiamata MCP non disponibili/);
+  assert.match(html, /Chiamate MCP non associate a riferimenti/);
+});
+
+test("reference keeps available embedded MCP details when live fields are null", () => {
+  const html = answer(result({
+    references: [{ id: 0, title: "Ricambio", tool_call_id: "kb",
+      mcp_call: { id: "kb", type: "mcp_call", name: "knowledge_base_retrieve", arguments: '{"q":"pompa"}', result_count: 0 } }],
+    tool_calls: [{ id: "kb", type: "mcp_call", name: null, arguments: null, result_count: null }],
+  }), { agent });
+  assert.match(html, /knowledge_base_retrieve/);
+  assert.match(html, /pompa/);
+  assert.match(html, /0 risultati/);
+});
+
+test("internal MCP activities with the same ID in different KB calls stay distinct", () => {
+  const html = answer(result({
+    references: [{ id: 0, title: "Ricambio", tool_call_id: "kb-1", activity_source: 7 }],
+    tool_calls: [
+      { id: "kb-1", type: "mcp_call", name: "knowledge_base_retrieve" },
+      { id: "kb-2", type: "mcp_call", name: "knowledge_base_retrieve" },
+    ],
+    activity: [
+      { id: 7, type: "mcpServer", tool_call_id: "kb-1", mcp_tool: "first" },
+      { id: 7, type: "mcpServer", tool_call_id: "kb-2", mcp_tool: "second", count: 0 },
+    ],
+  }), { agent });
+  assert.match(html, /Chiamate MCP non associate a riferimenti/);
+  assert.match(html, /second/);
+  assert.match(html, /0 risultati/);
+});
+
+test("anonymous KB calls do not borrow another call's internal MCP activity", () => {
+  const html = answer(result({
+    references: [{ id: 0, title: "Manuale", tool_call: 1, activity_source: 7,
+      mcp_call: { type: "mcp_call", name: "knowledge_base_retrieve" } }],
+    activity: [{ id: 7, type: "mcpServer", tool_call: 2, mcp_tool: "other_call" }],
+  }), { agent });
+  const card = html.slice(html.indexOf('class="reference-card"'), html.indexOf("</li>", html.indexOf('class="reference-card"')));
+  assert.doesNotMatch(card, /other_call/);
+  assert.match(html, /Chiamate MCP non associate a riferimenti[^]*other_call/);
+});
+
+test("empty call IDs do not link activities from different KB calls", () => {
+  const html = answer(result({
+    references: [{ id: 0, title: "Manuale", type: "mcpServer", tool_call: 1, tool_call_id: "",
+      activity_source: 7, mcp_call: { id: "", type: "mcp_call", name: "knowledge_base_retrieve" } }],
+    activity: [{ id: 7, tool_call: 2, tool_call_id: "", type: "mcpServer", mcp_tool: "other_call" }],
+  }), { agent });
+  const card = html.split('<li class="reference-card"')[1].split("</li>")[0];
+  assert.doesNotMatch(card, /other_call/);
+  assert.match(html, /Chiamate MCP non associate a riferimenti[^]*other_call/);
 });
 
 test("invalid or absent agent annotation positions do not create inline links", () => {

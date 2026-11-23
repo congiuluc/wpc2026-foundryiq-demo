@@ -16,7 +16,7 @@ const examples = Array.from({ length: 6 }, (_, index) => ({
 }));
 const config = {
   user: "Demo User", user_source: "test", user_token_available: true, running_on_app_service: false,
-  user_profile: { display_name: "Demo User", groups: ["group-1"], groups_status: "available", roles: [] },
+  user_profile: { display_name: "Demo User", object_id: "user-1", tenant_id: "tenant-1", groups: ["group-1", "group-2"], groups_status: "available", roles: [] },
   knowledge_bases: [
     { id: "demo", name: "demo", label: "Demo", examples, tests: examples },
     { id: "acl", name: "acl", label: "ACL", examples: [], tests: [] },
@@ -24,8 +24,17 @@ const config = {
   agents: [{ name: "one", label: "Agente uno", kind: "foundryiq", description: "Test" }, { name: "two", label: "Agente due", kind: "classic", description: "Test" }],
 };
 const received = [];
+const groupNameRequests = [];
+const groupClaims = { object_id: "user-1", tenant_id: "tenant-1", groups: ["group-1", "group-2"], groups_status: "available" };
+let groupNamesResponse = { ...groupClaims, names: { "group-1": "Tecnici", "group-2": "Direzione" }, status: "available", message: null };
+let groupNamesHttpStatus = 200;
 function reply(req, res, body) {
   if (req.url === "/api/config") return res.end(JSON.stringify(config));
+  if (req.url === "/api/profile/group-names") {
+    groupNameRequests.push(req.url);
+    res.statusCode = groupNamesHttpStatus;
+    return res.end(JSON.stringify(groupNamesResponse));
+  }
   if (req.url === "/api/chat" || req.url === "/api/agent-chat") {
     received.push(body);
     const agent = req.url === "/api/agent-chat";
@@ -50,6 +59,30 @@ function reply(req, res, body) {
         }
       : { answer: `Risposta ${body.use_acl ? "ACL" : "pubblica"} [0]`, references: [{ id: 0, title: body.use_acl ? "Manuale ACL" : "Manuale pubblico", url: "https://example.test/manual" }], activity: [{ id: 1, type: "modelQueryPlanning", status: "completed", started_ms: 20, completed_ms: 80, duration_ms: 60 }], sources: [{ name: "Manuali", type: "azureBlob", queries: 1, results: 1 }], elapsed_ms: 120, knowledge_base: body.knowledge_base, execution: { identity: "Credenziale Azure locale", acl_requested: body.use_acl, user_token_forwarded: body.use_acl, synthesis_performed: true, chat_deployment: "test" } };
     const delay = question.startsWith("Attendi") ? 1600 : 80;
+    if (agent && question === "Retry con attività precedente") {
+      res.setHeader("Content-Type", "text/event-stream");
+      const event = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+      event("activity", { id: 7, type: "mcpServer", tool_call_id: "kb", tool_call: 1, mcp_tool: "stale_tool" });
+      event("status", { stage: "Retry", result: { answer: "", streaming: { mode: "json_retry" } } });
+      event("completed", { ...response, answer: "Retry completato", citations: [], citation_spans: [],
+        tool_calls: [{ id: "kb", type: "mcp_call", name: "knowledge_base_retrieve" }],
+        references: [{ id: 0, title: "Nuovo riferimento", type: "mcpServer", activity_source: 7,
+          tool_call_id: "kb", tool_call: 1 }], activity: [] });
+      return res.end();
+    }
+    if (agent && question === "ID attività ambigui") {
+      res.setHeader("Content-Type", "text/event-stream");
+      const event = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+      const reference = { id: 0, title: "Riferimento ambiguo", type: "mcpServer", activity_source: 7,
+        tool_call_id: "kb", tool_call: 1 };
+      event("activity", { id: 7, type: "mcpServer", tool_call_id: "kb", tool_call: 1, mcp_tool: "first_call" });
+      event("activity", { id: "7", type: "mcpServer", tool_call_id: "kb", tool_call: 1, mcp_tool: "second_call" });
+      event("references", { items: [reference] });
+      event("completed", { ...response, answer: "Attività ambigue", citations: [], citation_spans: [],
+        tool_calls: [{ id: "kb", type: "mcp_call", name: "knowledge_base_retrieve" }],
+        references: [reference], activity: [] });
+      return res.end();
+    }
     if (["Streaming live", "Streaming errore", "Streaming interrotto", "Tool solo nello stream"].includes(question)) {
       assert.equal(body.stream, true);
       res.setHeader("Content-Type", "text/event-stream");
@@ -145,6 +178,15 @@ test("React chat, current and manual trace, and presentation controls", { timeou
       await wait(page, "!document.querySelector('.trace-dialog').open");
       await sleep(100);
     };
+    const openProfile = async () => {
+      await evaluate(page, "document.querySelector('.user').click()");
+      await wait(page, "document.querySelector('.profile-dialog').open");
+    };
+    const closeProfile = async () => {
+      await evaluate(page, "document.querySelector('.profile-dialog .dialog-actions button').click()");
+      await wait(page, "!document.querySelector('.profile-dialog').open");
+      await sleep(100);
+    };
     await wait(page, "!!document.querySelector('#question') && !!document.querySelector('#kb option')");
     await wait(page, "!document.querySelector('[href^=\"/static/\"], [src^=\"/static/\"]') && [...document.styleSheets].some(sheet => sheet.href?.includes('/assets/') && sheet.cssRules.length > 0)");
     await wait(page, "document.querySelectorAll('.starter-card').length === 6");
@@ -174,11 +216,71 @@ test("React chat, current and manual trace, and presentation controls", { timeou
     await wait(page, "document.querySelector('.tests-wrap').classList.contains('open') && document.querySelector('#tests').getAttribute('aria-hidden') === 'false'");
     await evaluate(page, "document.querySelector('.tests-hide-btn').click()");
     await wait(page, "document.querySelector('.tests-wrap').classList.contains('collapsed') && !!document.querySelector('.tests-edge-tab')");
-    await evaluate(page, "document.querySelector('.user').click()");
-    await wait(page, "document.querySelector('.profile-dialog').open");
-    assert.equal(await evaluate(page, "document.querySelector('.profile-dialog').textContent.includes('group-1')"), true);
-    await evaluate(page, "document.querySelector('.profile-dialog .dialog-actions button').click()");
-    await wait(page, "!document.querySelector('.profile-dialog').open");
+    assert.equal(groupNameRequests.length, 0);
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog').textContent.includes('Tecnici')");
+    assert.equal(await evaluate(page, `(() => {
+      const groups = document.querySelector('.profile-groups').textContent;
+      return groups.includes('Tecnici') && groups.includes('Direzione') && groups.includes('group-1') && groups.includes('group-2');
+    })()`), true);
+    await closeProfile();
+    groupNamesResponse = { ...groupClaims, names: { "group-1": "Tecnici" }, status: "partial", message: "Graph: Group.ReadBasic.All richiesto." };
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog [role=status]')?.textContent.includes('Group.ReadBasic.All')");
+    assert.equal(await evaluate(page, `(() => {
+      const groups = document.querySelector('.profile-groups').textContent;
+      return groups.includes('Tecnici') && groups.includes('group-1') && groups.includes('group-2') && !groups.includes('Direzione');
+    })()`), true);
+    await closeProfile();
+    groupNamesResponse = { ...groupClaims, names: {}, status: "unavailable", message: "Accesso a Graph negato." };
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog [role=status]')?.textContent.includes('Accesso a Graph negato')");
+    assert.equal(await evaluate(page, "document.querySelector('.profile-groups').textContent.includes('group-1') && document.querySelector('.profile-groups').textContent.includes('group-2')"), true);
+    await closeProfile();
+    groupNamesHttpStatus = 503;
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog [role=status]')?.textContent.includes('HTTP 503')");
+    assert.equal(await evaluate(page, "document.querySelector('.profile-groups').textContent.includes('group-1')"), true);
+    await closeProfile();
+    groupNamesHttpStatus = 200;
+    groupNamesResponse = { ...groupClaims, names: null, status: "available", message: null };
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog [role=status]')?.textContent.includes('risposta non valida')");
+    await closeProfile();
+    groupNamesResponse = { ...groupClaims, groups: ["group-2", "group-3"], groups_status: "overage",
+      names: { "group-2": "Direzione", "group-3": "Amministrazione" }, status: "available", message: null };
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog').textContent.includes('Amministrazione')");
+    assert.equal(await evaluate(page, `(() => {
+      const dialog = document.querySelector('.profile-dialog');
+      const groups = dialog.querySelector('.profile-groups').textContent;
+      return dialog.textContent.includes('Elenco incompleto') && groups.includes('group-2') && groups.includes('group-3') && !groups.includes('group-1');
+    })()`), true);
+    await closeProfile();
+    groupNamesResponse = { ...groupClaims, object_id: "user-2", names: { "group-1": "Altro utente" }, status: "available", message: null };
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog [role=status]')?.textContent.includes('sessione è cambiata')");
+    assert.equal(await evaluate(page, "!document.querySelector('.profile-dialog').textContent.includes('Altro utente')"), true);
+    await closeProfile();
+    groupNamesResponse = { ...groupClaims, groups: [], groups_status: "unavailable", names: {}, status: "available", message: null };
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog').textContent.includes('Gruppi non disponibili nei claim')");
+    assert.equal(await evaluate(page, "!document.querySelector('.profile-groups')"), true);
+    await closeProfile();
+    const longGroup = "11111111-1111-4111-8111-111111111111";
+    groupNamesResponse = { ...groupClaims, groups: [longGroup], names: { [longGroup]: `Gruppo-${"A".repeat(120)}` }, status: "available", message: null };
+    await page.call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await openProfile();
+    await wait(page, "document.querySelector('.profile-dialog').textContent.includes('Gruppo-AAAA')");
+    assert.equal(await evaluate(page, `(() => {
+      const dialog = document.querySelector('.profile-dialog');
+      const list = dialog.querySelector('.profile-groups').getBoundingClientRect();
+      const item = dialog.querySelector('.profile-groups li').getBoundingClientRect();
+      return dialog.scrollWidth <= dialog.clientWidth + 1 && item.right <= list.right + 1;
+    })()`), true);
+    await closeProfile();
+    await page.call("Emulation.setDeviceMetricsOverride", { width: 1365, height: 768, deviceScaleFactor: 1, mobile: false });
+    groupNamesResponse = { ...groupClaims, names: { "group-1": "Tecnici", "group-2": "Direzione" }, status: "available", message: null };
     await page.call("Page.bringToFront");
     await evaluate(page, "window.__nativeOpen = window.open; window.__openCalls = 0; window.open = () => { window.__openCalls++; return null; }; document.querySelector('[aria-label=\"Visualizza trace corrente\"]').focus()");
     await openTrace();
@@ -194,12 +296,52 @@ test("React chat, current and manual trace, and presentation controls", { timeou
       await evaluate(page, "document.querySelector('#form').requestSubmit()");
       await wait(page, "!!document.querySelector('.answer .text') && !!document.querySelector('.elapsed')");
       assert.equal(await evaluate(page, "document.querySelector('.answer .text').textContent.trim()"), "Risposta");
+      if (mode !== "agents") {
+      const consoleLayout = await evaluate(page, `(() => {
+        const answer = document.querySelector('.answer');
+        const output = answer.querySelector('.answer-output').getBoundingClientRect();
+        const console = answer.querySelector('.timeline-console');
+        const rect = console.getBoundingClientRect();
+        return { open: console.open, events: console.querySelector('[role=log]').textContent,
+          columns: getComputedStyle(answer.querySelector('.answer-processing')).gridTemplateColumns.split(' ').length,
+          beside: rect.left >= output.right, below: rect.top >= output.bottom };
+      })()`);
+      assert.equal(consoleLayout.open, true);
+      assert.match(consoleLayout.events, /Attività avviata/);
+      assert.equal(consoleLayout.columns === 2 ? consoleLayout.beside : consoleLayout.below, true);
+      if (mode === "noacl") {
+        assert.equal(consoleLayout.columns, 2);
+        await page.call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+        assert.equal(await evaluate(page, `(() => {
+          const output = document.querySelector('.answer-output').getBoundingClientRect();
+          const console = document.querySelector('.timeline-console').getBoundingClientRect();
+          return console.top >= output.bottom && document.documentElement.scrollWidth <= innerWidth + 1;
+        })()`), true);
+        await page.call("Emulation.setDeviceMetricsOverride", { width: 1365, height: 768, deviceScaleFactor: 1, mobile: false });
+      }
+      } else {
+        assert.equal(await evaluate(page, `Array.from(document.querySelectorAll('.answer')).every(answer => {
+          const timeline = answer.querySelector('.timeline');
+          return timeline.open && !answer.querySelector('.timeline-console')
+            && !!(timeline.compareDocumentPosition(answer.querySelector('.agent-metrics')) & Node.DOCUMENT_POSITION_FOLLOWING);
+        })`), true);
+      }
       await openTrace();
       assert.equal(await evaluate(page, "document.querySelector('.trace-dialog #trace-view').textContent.includes('Risposta')"), true);
       assert.equal(await evaluate(page, "document.querySelector('.trace-waterfall')?.textContent.includes('osservati')"), true);
+      assert.equal(await evaluate(page, "document.querySelector('.waterfall-request .waterfall-state')?.textContent"), "In corso");
+      if (mode === "agents") {
+        assert.match(await evaluate(page, "document.querySelector('.waterfall-tool .waterfall-state')?.textContent"), /ultimo evento/);
+      }
       await closeTrace();
       await wait(page, "!document.querySelector('.elapsed')");
       assert.equal(await evaluate(page, "document.querySelectorAll('.answer').length"), mode === "noacl" ? 1 : 2);
+      assert.equal(await evaluate(page, `Array.from(document.querySelectorAll('.answer')).every(answer => {
+        const timeline = answer.querySelector('.timeline');
+        return !timeline.open && !timeline.classList.contains('timeline-console')
+          && (${mode === "agents"} || (!!(answer.querySelector('.text').compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING)
+          && !!(timeline.compareDocumentPosition(answer.querySelector('.references-details')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+      })`), true);
       if (mode === "agents") {
         await openTrace();
         const bars = await evaluate(page, `Array.from(document.querySelectorAll('.waterfall-tool')).map(row => {
@@ -223,6 +365,7 @@ test("React chat, current and manual trace, and presentation controls", { timeou
       await wait(page, "!!document.querySelector('.answer-error-msg')");
       assert.equal(await evaluate(page, "document.querySelector('.answer .text').textContent.trim()"), "Risposta");
       assert.equal(await evaluate(page, "!document.querySelector('.elapsed')"), true);
+      assert.equal(await evaluate(page, "!!document.querySelector('.timeline') && !document.querySelector('.timeline').open && !document.querySelector('.timeline-console')"), true);
       await evaluate(page, "document.querySelector('#reset').click()");
     }
     await setValue(page, "#question", "Domanda prova api_key=secret-demo-value");
@@ -296,6 +439,25 @@ test("React chat, current and manual trace, and presentation controls", { timeou
       return users.length === 2 && users.every(x => x.nextElementSibling.querySelector('.waterfall-tool .waterfall-bar'));
     })()`), true);
     await closeTrace();
+    await setValue(page, "#question", "Retry con attività precedente");
+    await evaluate(page, "document.querySelector('#form').requestSubmit()");
+    await wait(page, "!document.querySelector('.elapsed') && document.querySelectorAll('.answer').length === 6");
+    assert.equal(await evaluate(page, `(() => {
+      const cards = [...document.querySelectorAll('.answer')].slice(-2);
+      return cards.every(card => card.textContent.includes('Nuovo riferimento') && !card.textContent.includes('stale_tool'));
+    })()`), true);
+    await setValue(page, "#question", "ID attività ambigui");
+    await evaluate(page, "document.querySelector('#form').requestSubmit()");
+    await wait(page, "!document.querySelector('.elapsed') && document.querySelectorAll('.answer').length === 8");
+    assert.equal(await evaluate(page, `(() => {
+      const cards = [...document.querySelectorAll('.answer')].slice(-2);
+      return cards.every(card => {
+        const reference = card.querySelector('.reference-card')?.textContent || '';
+        const unlinked = card.querySelector('.reference-mcp-unlinked')?.textContent || '';
+        return reference.includes('Riferimento ambiguo') && !reference.includes('first_call') && !reference.includes('second_call')
+          && unlinked.includes('first_call') && unlinked.includes('second_call');
+      });
+    })()`), true);
     await setValue(page, "#question", "Attendi live");
     await evaluate(page, "document.querySelector('#form').requestSubmit()");
     await wait(page, "!!document.querySelector('.elapsed')");

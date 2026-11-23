@@ -106,10 +106,12 @@ function global:az {{
     assert isinstance(instructions, str)
     assert all(name in instructions for name in ("manuals-test", "parts-test", "web-test"))
     assert all(tool in instructions for tool in ("search_parts", "check_stock", "low_stock_report"))
-    assert ("policies-test" in instructions) is with_sharepoint
-    assert ("policies-test" in [source["name"] for source in kb["knowledgeSources"]]) is with_sharepoint
+    kb_sources = [source["name"] for source in kb["knowledgeSources"]]
+    assert "policies-test" not in kb_sources
+    assert "'policies-test'" not in instructions
     assert ("policies-indexed-test" in instructions) is with_indexed_sharepoint
-    assert ("policies-indexed-test" in [source["name"] for source in kb["knowledgeSources"]]) is with_indexed_sharepoint
+    assert ("policies-indexed-test" in kb_sources) is with_indexed_sharepoint
+    assert any("/knowledgesources/policies-test?" in item["url"] for item in requests) is with_sharepoint
     indexed_requests = [
         item["body"] for item in requests
         if "/knowledgesources/policies-indexed-test?" in item["url"]

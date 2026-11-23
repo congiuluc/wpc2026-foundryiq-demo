@@ -5,7 +5,8 @@
 #  - policies-sharepoint-ks: remoteSharePoint knowledge source on the policies folder (only if setup_sharepoint.ps1 ran)
 #  - policies-sharepoint-indexed-ks: indexedSharePoint source with document ACLs (if an ingestion connection is configured)
 #  - bing-filtered-ks      : web knowledge source restricted to configured distributor domains
-#  - wpc-foundryiq-kb      : knowledge base combining the sources
+#  - wpc-foundryiq-kb      : knowledge base combining blob, MCP, indexed SharePoint (if configured) and Bing;
+#                            the remote SharePoint source is never added to the KB
 #  - acl-docs-ks / wpc-acl-kb: ADLS Gen2 source with document-level ACLs and its demo KB (if setup_acl_demo.ps1 ran)
 # and, on the Foundry project, the RemoteTool connections used by agents: knowledge base MCP endpoint (managed identity)
 # and ricambi MCP server (custom keys, header x-api-key).
@@ -196,8 +197,6 @@ if ($sharePointPath -and -not $skipSharePoint) {
             containerTypeId  = $null
         }
     }
-    $knowledgeSources += @{ name = $SharePointKnowledgeSourceName }
-    $retrievalInstructions += "Usa '$SharePointKnowledgeSourceName' per policy aziendali, sicurezza e procedure, rispettando i permessi dell'utente."
 }
 else {
     Write-Host "  SharePoint non configurato (SHAREPOINT_POLICIES_URL assente): knowledge source '$SharePointKnowledgeSourceName' saltata."
@@ -226,12 +225,17 @@ if ($indexedSharePointConnection -and -not $skipSharePoint) {
             }
         }
     }
-    $knowledgeSources += @{ name = $IndexedSharePointKnowledgeSourceName }
-    $retrievalInstructions += "Usa '$IndexedSharePointKnowledgeSourceName' per cercare nelle policy SharePoint indicizzate con ACL; i contenuti e i permessi riflettono l'ultima indicizzazione, non una verifica live. Evita di duplicare le stesse policy restituite dalla sorgente remota."
     Write-Host '  SharePoint indexed configurato: verifica il completamento e gli eventuali errori dell''indexer nel portale Search.'
 }
 else {
     Write-Host "  SharePoint indexed non configurato o saltato: imposta SHAREPOINT_INDEXED_CONNECTION_STRING per aggiungere '$IndexedSharePointKnowledgeSourceName'."
+}
+
+# The KB uses only the indexed SharePoint source (with ACLs); the remote source is never added to the KB
+# and is created only for direct use outside it.
+if ($indexedSharePointConnection -and -not $skipSharePoint) {
+    $knowledgeSources += @{ name = $IndexedSharePointKnowledgeSourceName }
+    $retrievalInstructions += "Usa '$IndexedSharePointKnowledgeSourceName' per policy aziendali, sicurezza e procedure, rispettando i permessi dell'utente."
 }
 
 Invoke-SearchPut "knowledgesources/$BingKnowledgeSourceName" @{

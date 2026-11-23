@@ -11,7 +11,7 @@
   "editing": "Italian on-screen captions; no fabricated responses or request-time adjustments",
   "demos": {
     "multi-fonte": {
-      "title": "Una domanda, pi\u00f9 fonti",
+      "title": "Una domanda, più fonti",
       "video": "demo-multi-fonte.mp4",
       "duration_seconds": 102.5,
       "requests": [
@@ -199,6 +199,77 @@
           "agent": "wpc-technician-assistant",
           "acl_requested": false,
           "user_token_forwarded": false
+        }
+      ]
+    },
+    "acl-due-utenti": {
+      "title": "Stessa domanda, due utenti",
+      "video": "demo-acl-due-utenti.mp4",
+      "duration_seconds": 77.46,
+      "recorded_at_utc": "2026-11-23T11:21:50.097609+00:00",
+      "identity": "Two real test accounts signed in interactively via Easy Auth; account and IDs redacted",
+      "question": "Qual è il codice della modalità service del Ven Systems Model 12?",
+      "document": "codici-modalita-service.md",
+      "users": [
+        {
+          "label": "Enrico",
+          "in_tecnici_expected": true,
+          "tecnici_group_in_claims": true,
+          "groups_in_claims": 1,
+          "requests": [
+            {
+              "ok": true,
+              "http_status": 200,
+              "references": 1,
+              "citations": 0,
+              "elapsed_ms": 2817,
+              "sources": [
+                {
+                  "name": "acl-docs-ks",
+                  "type": "azureBlob",
+                  "results": 1,
+                  "error": false
+                }
+              ],
+              "tool_calls": 0,
+              "usage": {
+                "input_tokens": 378,
+                "output_tokens": 228,
+                "total_tokens": 606
+              },
+              "agent": null,
+              "acl_requested": true,
+              "user_token_forwarded": true
+            }
+          ]
+        },
+        {
+          "label": "Claudia",
+          "in_tecnici_expected": false,
+          "tecnici_group_in_claims": false,
+          "groups_in_claims": 1,
+          "requests": [
+            {
+              "ok": true,
+              "http_status": 200,
+              "references": 0,
+              "citations": 0,
+              "elapsed_ms": 391,
+              "sources": [
+                {
+                  "name": "acl-docs-ks",
+                  "type": "azureBlob",
+                  "results": 0,
+                  "error": false
+                }
+              ],
+              "tool_calls": 0,
+              "usage": {},
+              "agent": null,
+              "acl_requested": true,
+              "user_token_forwarded": true
+            }
+          ]
         }
       ]
     }

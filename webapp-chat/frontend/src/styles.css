@@ -651,6 +651,17 @@ legend {
 }
 
 /* Live streaming timeline */
+.answer-processing { min-width: 0; }
+.answer-output { min-width: 0; }
+.answer-processing.with-console { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 1rem; margin-top: .75rem; }
+.timeline-console { min-width: 0; margin: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .7rem; background: var(--panel); }
+.timeline-console > summary { font-size: .82rem; }
+.timeline-console > ol { font-family: Consolas, "Cascadia Code", monospace; }
+.timeline-console .timeline-item { grid-template-columns: auto 1fr; }
+.timeline-console .timeline-text { grid-column: 1 / -1; overflow-wrap: anywhere; }
+@container (max-width: 36rem) {
+  .answer-processing.with-console { grid-template-columns: minmax(0, 1fr); }
+}
 .timeline > ol { list-style: none; margin: .5rem 0 0; padding: 0; max-height: 18rem; overflow-y: auto; font-size: .84rem; }
 .timeline-item { display: grid; grid-template-columns: 4.2rem 6.2rem 1fr; gap: .5rem; align-items: baseline; padding: .3rem .4rem; border-left: 3px solid var(--border); }
 .timeline-item + .timeline-item { margin-top: .15rem; }
@@ -1735,6 +1746,9 @@ dialog::backdrop { background: rgba(6, 9, 24, .62); backdrop-filter: blur(6px); 
   overflow-wrap: anywhere;
 }
 .profile-groups li .ui-icon { color: var(--ok); }
+.profile-group-text { display: flex; flex-direction: column; min-width: 0; }
+.profile-group-text strong { overflow-wrap: anywhere; }
+.profile-group-text code { overflow-wrap: anywhere; }
 .profile-footnote { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
 
 .infographic-dialog { width: min(100rem, 96vw); }

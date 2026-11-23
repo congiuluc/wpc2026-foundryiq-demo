@@ -236,7 +236,6 @@ L'hook `postdeploy` crea questi oggetti sul servizio Search (API `2026-11-01-pre
 flowchart LR
     KS1[machinespecs-ks<br/>azureBlob] --> KB1{{wpc-foundryiq-kb}}
     KS2[ricambi-magazzino-ks<br/>mcpServer] --> KB1
-    KS3[policies-sharepoint-ks<br/>remoteSharePoint] -.opzionale.-> KB1
     KS6[policies-sharepoint-indexed-ks<br/>indexedSharePoint] -.opzionale.-> KB1
     KS4[bing-filtered-ks<br/>web] --> KB1
     KS5[acl-docs-ks<br/>azureBlob ADLS Gen2] -.opzionale.-> KB2{{wpc-acl-kb}}
@@ -248,22 +247,22 @@ flowchart LR
 |---|---|---|
 | `machinespecs-ks` | Knowledge source `azureBlob` | Descrizione: manuali tecnici delle macchine. Legge il container `machinespecs`, indicizzato con `text-embedding-3-large`. |
 | `ricambi-magazzino-ks` | Knowledge source `mcpServer` | Descrizione: ricerca ricambi, disponibilità, alternative, ordini aperti e articoli sotto scorta. Interroga i tool MCP in tempo reale. |
-| `policies-sharepoint-ks` | Knowledge source `remoteSharePoint` | Descrizione: policy aziendali per i tecnici. Cartella `policies`, filtrata per `Path`, interrogata in tempo reale con l'identità dell'utente. Creata solo se `setup_sharepoint.ps1` è riuscito. |
-| `policies-sharepoint-indexed-ks` | Knowledge source `indexedSharePoint` | Policy nella cartella `policies` e sottocartelle EN/IT, importate in Search con `text-embedding-3-large` e ACL `userIds, groupIds`. Creata se è configurata `SHAREPOINT_INDEXED_CONNECTION_STRING`, senza sostituire la sorgente remota. |
+| `policies-sharepoint-ks` | Knowledge source `remoteSharePoint` | Descrizione: policy aziendali per i tecnici. Cartella `policies`, filtrata per `Path`, interrogata in tempo reale con l'identità dell'utente. Creata solo se `setup_sharepoint.ps1` è riuscito; non viene aggiunta a `wpc-foundryiq-kb`. |
+| `policies-sharepoint-indexed-ks` | Knowledge source `indexedSharePoint` | Policy nella cartella `policies` e sottocartelle EN/IT, importate in Search con `text-embedding-3-large` e ACL `userIds, groupIds`. Creata se è configurata `SHAREPOINT_INDEXED_CONNECTION_STRING`; è l'unica sorgente SharePoint della KB. |
 | `bing-filtered-ks` | Knowledge source `web` | Descrizione: ricerca web Bing per informazioni aggiornate sui ricambi. Limitata ai domini in `FOUNDRYIQ_BING_ALLOWED_DOMAINS`. |
-| `wpc-foundryiq-kb` | Knowledge base | Descrizione: assistente tecnici WPC con manuali, magazzino, policy e ricerca web filtrata. Combina le sorgenti disponibili, con modello chat completions `gpt-5.2`, reasoning effort `low` e `retrievalInstructions` definite nello script. |
+| `wpc-foundryiq-kb` | Knowledge base | Descrizione: assistente tecnici WPC con manuali, magazzino, policy e ricerca web filtrata. Combina manuali, magazzino, SharePoint indexed (se configurata) e web, con modello chat completions `gpt-5.2`, reasoning effort `low` e `retrievalInstructions` definite nello script. |
 | `acl-docs-ks` | Knowledge source `azureBlob` (ADLS Gen2) | Descrizione: documenti interni con permessi per documento. Importa le ACL POSIX (`ingestionPermissionOptions: userIds, groupIds`). Creata solo se la demo ACL è stata preparata. |
 | `wpc-acl-kb` | Knowledge base | Demo ACL: contiene solo `acl-docs-ks`, reasoning effort `minimal`, per osservare il filtro dei permessi. |
 
 La knowledge source Bing usa un'allowlist, predefinita a `grainger.com,mcmaster.com,rs-online.com,digikey.com,mouser.com,misumi-ec.com,automationdirect.com`. Il web grounding Bing può comportare costi aggiuntivi e i dati inviati al servizio web sono soggetti ai relativi termini e confini di conformità, non a quelli Azure; usa solo contenuti appropriati per la ricerca web.
 
-Le `retrievalInstructions` guidano la pianificazione verso le sorgenti pertinenti e, per le domande multi-fonte, combinano manuali, magazzino, policy e web quando disponibili. Sono applicate alla KB dall'hook `postdeploy` e non modificano le ACL né le istruzioni usate dalla chat per sintetizzare la risposta. Per configurarle manualmente, inserisci nel campo **Retrieval instructions** il testo seguente, adattando i nomi delle sorgenti e omettendo SharePoint se non configurato:
+Le `retrievalInstructions` guidano la pianificazione verso le sorgenti pertinenti e, per le domande multi-fonte, combinano manuali, magazzino, policy e web quando disponibili. Sono applicate alla KB dall'hook `postdeploy` e non modificano le ACL né le istruzioni usate dalla chat per sintetizzare la risposta. Per configurarle manualmente, inserisci nel campo **Retrieval instructions** il testo seguente, adattando i nomi delle sorgenti e omettendo SharePoint se la sorgente indexed non è configurata:
 
 ```text
 Pianifica ricerche distinte per gli aspetti della domanda e usa le sorgenti pertinenti; combina più sorgenti quando la richiesta lo richiede.
 Usa 'machinespecs-ks' per manuali, specifiche delle macchine, manutenzione e troubleshooting.
 Usa 'ricambi-magazzino-ks' per ricambi, giacenze, sottoscorta, ordini e alternative; scegli i tool pertinenti come search_parts, check_stock, low_stock_report e find_alternative_parts.
-Usa 'policies-sharepoint-ks' per policy aziendali, sicurezza e procedure, rispettando i permessi dell'utente.
+Usa 'policies-sharepoint-indexed-ks' per policy aziendali, sicurezza e procedure, rispettando i permessi dell'utente.
 Usa 'bing-filtered-ks' per cataloghi, fornitori e informazioni pubbliche aggiornate; non includere dati riservati nelle ricerche web.
 Mantieni esatti i nomi delle macchine e i codici dei ricambi. Non presumere disponibilità, date di consegna o autorizzazioni non presenti nelle fonti.
 ```
