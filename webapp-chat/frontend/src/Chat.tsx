@@ -167,8 +167,9 @@ export function Chat({ demo }: { demo: Demo | null }) {
     return () => document.body.classList.remove("tests-closed");
   }, [testsOpen]);
   const kb = config?.knowledge_bases.find((k) => k.id === (mode === "agents" ? "demo" : kbId)) || (!route ? config?.knowledge_bases[0] : undefined);
-  const examples = (kb?.examples || []).map((x) => typeof x === "string" ? { label: x, question: x } : x);
-  const tests = kb?.tests || examples;
+  const allExamples = (kb?.examples || []).map((x) => typeof x === "string" ? { label: x, question: x } : x);
+  const examples = allExamples.slice(0, 6);
+  const tests = kb?.tests || allExamples;
   const selectedAgents = (config?.agents || []).filter((a) => agents.includes(a.name));
   const reset = () => {
     controllers.current.forEach(controller => controller.abort()); controllers.current.clear();

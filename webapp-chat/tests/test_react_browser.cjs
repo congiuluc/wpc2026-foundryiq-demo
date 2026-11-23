@@ -10,7 +10,7 @@ const { setTimeout: sleep } = require("node:timers/promises");
 
 const root = path.resolve(__dirname, "..");
 const chrome = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const examples = Array.from({ length: 6 }, (_, index) => ({
+const examples = Array.from({ length: 8 }, (_, index) => ({
   label: `Esempio ${index + 1}`,
   question: `Domanda esempio ${index + 1}`,
 }));
@@ -208,12 +208,16 @@ test("React chat, current and manual trace, and presentation controls", { timeou
     await page.call("Input.dispatchKeyEvent", { type: "keyDown", key: "6", code: "Digit6", modifiers: 1, windowsVirtualKeyCode: 54 });
     await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "6", code: "Digit6", modifiers: 1, windowsVirtualKeyCode: 54 });
     await wait(page, "document.querySelector('#question').value === 'Domanda esempio 6'");
+    await page.call("Input.dispatchKeyEvent", { type: "keyDown", key: "7", code: "Digit7", modifiers: 1, windowsVirtualKeyCode: 55 });
+    await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "7", code: "Digit7", modifiers: 1, windowsVirtualKeyCode: 55 });
+    assert.equal(await evaluate(page, "document.querySelector('#question').value"), "Domanda esempio 6");
     await page.call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
     assert.equal(await evaluate(page, "document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelectorAll('.starter-card').length === 6"), true);
     await page.call("Emulation.setDeviceMetricsOverride", { width: 1365, height: 768, deviceScaleFactor: 1, mobile: false });
     assert.equal(await evaluate(page, "document.querySelector('.tests-wrap').classList.contains('collapsed') && document.querySelector('#tests').getAttribute('aria-hidden') === 'true' && !!document.querySelector('.tests-edge-tab')"), true);
     await evaluate(page, "document.querySelector('.tests-edge-tab').click()");
     await wait(page, "document.querySelector('.tests-wrap').classList.contains('open') && document.querySelector('#tests').getAttribute('aria-hidden') === 'false'");
+    assert.equal(await evaluate(page, "document.querySelectorAll('.test-item').length"), 8);
     await evaluate(page, "document.querySelector('.tests-hide-btn').click()");
     await wait(page, "document.querySelector('.tests-wrap').classList.contains('collapsed') && !!document.querySelector('.tests-edge-tab')");
     assert.equal(groupNameRequests.length, 0);
@@ -296,6 +300,7 @@ test("React chat, current and manual trace, and presentation controls", { timeou
       await evaluate(page, "document.querySelector('#form').requestSubmit()");
       await wait(page, "!!document.querySelector('.answer .text') && !!document.querySelector('.elapsed')");
       assert.equal(await evaluate(page, "document.querySelector('.answer .text').textContent.trim()"), "Risposta");
+      assert.equal(await evaluate(page, "document.querySelectorAll('.examples button').length"), 6);
       if (mode !== "agents") {
       const consoleLayout = await evaluate(page, `(() => {
         const answer = document.querySelector('.answer');
