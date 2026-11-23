@@ -11,6 +11,8 @@ Un tecnico di manutenzione chiede: *"Il Rx1 ha inceppamenti: quale ricambio serv
 
 **Per la presentazione:** [copione delle tre demo e video offline](docs/demo-guide.md). I file MP4 in [docs/videos](docs/videos/) si possono riprodurre senza connettività dopo averli scaricati. Le registrazioni interrogano servizi Azure reali con i dati sintetici della demo; non sono risposte simulate.
 
+**Demo via HTTP:** i [file `.http` per VS Code REST Client](http/README.md) mostrano retrieval multi-fonte, confronto ACL e agenti RAG vs Foundry IQ direttamente sulle API, senza avviare notebook o web app.
+
 La web app supporta [risposte e attività in streaming](webapp-chat/README.md#streaming-delle-risposte-e-della-telemetria), anche nei confronti ACL e agenti, con aggiornamento della Trace e consumi retrieval/generazione distinti.
 
 ## Cosa mostra la demo

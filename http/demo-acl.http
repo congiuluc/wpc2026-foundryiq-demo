@@ -1,0 +1,51 @@
+# VS Code REST Client (humao.rest-client). Configurazione: README.md.
+@searchEndpoint = {{$dotenv FOUNDRYIQ_DEMO_SEARCH_ENDPOINT}}
+@knowledgeBase = {{$dotenv FOUNDRYIQ_ACL_KB_NAME}}
+@searchToken = {{$dotenv SEARCH_TOKEN}}
+@userSearchToken = {{$dotenv USER_SEARCH_TOKEN}}
+@apiVersion = 2026-11-01-preview
+@question = Qual e' il codice della procedura di richiesta ricambi e lo SLA per la priorita' P1?
+# Per provare il documento Direzione, sostituisci question con:
+# Qual e' lo sconto concordato con Delta Systems negli accordi quadro 2027?
+
+### Configurazione ACL: verificare reasoning minimal e knowledge source
+# @name aclKnowledgeBase
+GET {{searchEndpoint}}/knowledgebases/{{knowledgeBase}}?api-version={{apiVersion}}
+Authorization: Bearer {{searchToken}}
+Accept: application/json
+
+### Stessa domanda SENZA token sorgente utente (non e' un bypass delle ACL)
+# @name withoutUserToken
+POST {{searchEndpoint}}/knowledgebases/{{knowledgeBase}}/retrieve?api-version={{apiVersion}}
+Authorization: Bearer {{searchToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "intents": [
+    {
+      "type": "semantic",
+      "search": "{{question}}"
+    }
+  ],
+  "includeActivity": true
+}
+
+### Stessa domanda CON token sorgente utente: cambia solo questo header
+# Il valore NON deve contenere il prefisso Bearer.
+# @name withUserToken
+POST {{searchEndpoint}}/knowledgebases/{{knowledgeBase}}/retrieve?api-version={{apiVersion}}
+Authorization: Bearer {{searchToken}}
+x-ms-query-source-authorization: {{userSearchToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "intents": [
+    {
+      "type": "semantic",
+      "search": "{{question}}"
+    }
+  ],
+  "includeActivity": true
+}

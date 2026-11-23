@@ -38,12 +38,15 @@ async function request(path: string, body: object, signal: AbortSignal, onUpdate
         if (typeof data.answer !== "string") throw new Error("Risposta finale non valida.");
         completed = { ...result, ...data, answer: data.answer };
         if (Array.isArray(data.tool_calls) && result.tool_calls?.length) {
-          // The final payload has no timings: keep the ones measured while streaming.
           const streamed = result.tool_calls;
-          completed.tool_calls = data.tool_calls.map((call: ToolCall, index: number) => {
-            const live = streamed.find(item => call.id && item.id === call.id) ?? (call.id ? undefined : streamed[index]);
-            return live ? { ...call, started_ms: live.started_ms, completed_ms: live.completed_ms, duration_ms: live.duration_ms } : call;
+          const finalCalls: ToolCall[] = data.tool_calls;
+          const finalIds = new Set(finalCalls.flatMap((call) => call.id ? [call.id] : []));
+          completed.tool_calls = finalCalls.map((call) => {
+            const live = call.id ? streamed.find((item) => item.id === call.id) : undefined;
+            return live ? { ...call, started_ms: live.started_ms ?? call.started_ms,
+              completed_ms: live.completed_ms ?? call.completed_ms, duration_ms: live.duration_ms ?? call.duration_ms } : call;
           });
+          completed.tool_calls.push(...streamed.filter((call) => call.id ? !finalIds.has(call.id) : !finalCalls.length));
         }
         continue;
       }

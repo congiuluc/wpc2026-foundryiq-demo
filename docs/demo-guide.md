@@ -2,6 +2,8 @@
 
 Tre percorsi dimostrativi della stessa applicazione: **multi-fonte**, **ACL** e **agenti RAG vs Foundry IQ**. Questa guida è il copione per la presentazione e il piano di riserva quando rete, token o servizi non sono disponibili.
 
+Per mostrare le richieste API senza interfaccia web, usa le [tre demo `.http` con VS Code REST Client](../http/README.md): retrieval multi-fonte, stessa query ACL senza/con token utente e chiamate dirette agli agenti. Richiedono connettività Azure; non sono un'alternativa offline.
+
 I video sono **MP4 H.264, 1920 × 1080, 24 fps, senza audio**, con indicazioni in italiano sovrapposte all'interfaccia. Le risposte provengono dai servizi Azure effettivamente interrogati dalla versione locale corrente della chat, autenticata tramite Azure CLI. Manuali, policy e giacenze restano i **dati sintetici del repository**, non dati di clienti. Non sono risposte mock; identità e ID personali sono oscurati. Le infografiche di architettura descrivono invece il percorso previsto, non una query osservata.
 
 La registrazione locale usa la credenziale Azure del presentatore anche per autorizzare il backend: non dimostra il flusso di login Easy Auth o l'identità gestita dell'app distribuita. Nella demo agenti le chiamate avvengono con il contesto del progetto Foundry. Per verificare l'esperienza distribuita esegui anche la demo sull'URL della Web App.

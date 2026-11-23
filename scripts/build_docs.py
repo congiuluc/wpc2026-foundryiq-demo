@@ -25,6 +25,7 @@ PAGES = [
     "agents/README.md",
     "webapp-chat/README.md",
     "notebooks/README.md",
+    "http/README.md",
     "data/sharepoint/foundry-iq-sharepoint-remote-knowledge-source.md",
     "docs/demo-guide.md",
     "CONTRIBUTING.md",

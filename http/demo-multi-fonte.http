@@ -1,0 +1,37 @@
+# VS Code REST Client (humao.rest-client). Configurazione: README.md.
+@searchEndpoint = {{$dotenv FOUNDRYIQ_DEMO_SEARCH_ENDPOINT}}
+@knowledgeBase = {{$dotenv FOUNDRYIQ_DEMO_KB_NAME}}
+@searchToken = {{$dotenv SEARCH_TOKEN}}
+@userSearchToken = {{$dotenv USER_SEARCH_TOKEN}}
+@apiVersion = 2026-11-01-preview
+
+### Composizione della knowledge base (nessuna modifica)
+# @name knowledgeBase
+GET {{searchEndpoint}}/knowledgebases/{{knowledgeBase}}?api-version={{apiVersion}}
+Authorization: Bearer {{searchToken}}
+Accept: application/json
+
+### Una domanda: manuale, magazzino MCP e policy SharePoint
+# Il token sorgente e' un token Search utente, SENZA prefisso Bearer.
+# SharePoint remoto lo richiede anche fuori dalla demo ACL.
+# @name multiFonte
+POST {{searchEndpoint}}/knowledgebases/{{knowledgeBase}}/retrieve?api-version={{apiVersion}}
+Authorization: Bearer {{searchToken}}
+x-ms-query-source-authorization: {{userSearchToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Devo cambiare le membrane filtranti della Graphene Vapor Reclaim Tank: ogni quanto va fatto, quante GRT-002 abbiamo a magazzino e come vanno smaltite quelle esauste?"
+        }
+      ]
+    }
+  ],
+  "includeActivity": true
+}

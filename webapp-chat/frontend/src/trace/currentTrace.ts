@@ -108,7 +108,7 @@ export function createCollector(): TraceCollector {
           "remote_sharepoint", "synthesis_performed", "chat_deployment"]),
         activity: (result.activity || []).map((item) => ({
           ...pick(item, ["id", "type", "knowledgeSourceName", "count", "elapsedMs", "query", "status",
-            "startedAt", "completedAt", "inputTokens", "outputTokens"]),
+            "startedAt", "completedAt", "started_ms", "completed_ms", "duration_ms", "inputTokens", "outputTokens"]),
           ...(item.error ? { error: "Errore restituito dal servizio" } : {}),
         })),
         sources: (result.sources || []).map((item) => pick(item, ["name", "type", "queries", "results"])),

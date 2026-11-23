@@ -157,6 +157,9 @@ function References({ items, agent, citationCount, linkedCount, toolReferencesMi
           <div className="reference-title">{url ? <a href={url} target="_blank" rel="noopener noreferrer">{title} <span className="reference-external">↗ <span className="sr-only">(si apre in una nuova scheda)</span></span></a> : <strong>{title}</strong>}</div>
           {item.path && !url && <div className="reference-path">{(item.knowledge_source_type || item.type || "").includes("SharePoint") ? "Raccolta SharePoint" : "Percorso"}: {item.path}</div>}
           {typeof item.score === "number" && <div className="reference-path">Pertinenza (reranker semantico): {item.score.toLocaleString("it-IT", { maximumFractionDigits: 2 })} / 4</div>}
+          {item.mcp_tool && <div className="reference-path reference-mcp">Chiamata server MCP: <code>{item.mcp_tool}</code>
+            {item.mcp_arguments && Object.keys(item.mcp_arguments).length > 0 && <> ({Object.entries(item.mcp_arguments).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ")})</>}
+            {(typeof item.result_count === "number" || typeof item.elapsed_ms === "number") && <> · {[typeof item.result_count === "number" ? `${item.result_count} risultati` : null, typeof item.elapsed_ms === "number" ? `${item.elapsed_ms} ms` : null].filter(Boolean).join(" · ")}</>}</div>}
         </li>;
       })}
     </ul>}

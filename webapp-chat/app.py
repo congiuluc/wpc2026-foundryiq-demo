@@ -396,7 +396,7 @@ def summarize_references(result: dict[str, Any]) -> list[dict[str, Any]]:
             title = unquote(location.rstrip("/").split("/")[-1])
         # Storage URLs are not readable from the browser; only web and SharePoint links are clickable.
         is_storage = bool(location) and (".blob.core." in location or ".dfs.core." in location)
-        references.append({
+        reference = {
             "id": ref.get("id"),
             "type": ref.get("type"),
             "activity_source": activity_id,
@@ -406,7 +406,19 @@ def summarize_references(result: dict[str, Any]) -> list[dict[str, Any]]:
             "url": location if location and location.startswith("http") and not is_storage else None,
             "path": location,
             "score": ref.get("rerankerScore"),
-        })
+        }
+        # mcpServer sources: the reference names the tool, the linked activity holds arguments and timing.
+        mcp = activity.get("mcpServerArguments") if isinstance(activity.get("mcpServerArguments"), dict) else {}
+        tool = ref.get("toolName") or mcp.get("toolName")
+        if tool:
+            reference["mcp_tool"] = tool
+            if isinstance(mcp.get("toolArguments"), dict):
+                reference["mcp_arguments"] = mcp["toolArguments"]
+            if activity.get("elapsedMs") is not None:
+                reference["elapsed_ms"] = activity["elapsedMs"]
+            if activity.get("count") is not None:
+                reference["result_count"] = activity["count"]
+        references.append(reference)
     return references
 
 
@@ -420,6 +432,11 @@ def summarize_activity(result: dict[str, Any]) -> list[dict[str, Any]]:
         for value in item.values():
             if isinstance(value, dict) and isinstance(value.get("search"), str):
                 entry["query"] = value["search"]
+        mcp = item.get("mcpServerArguments")
+        if isinstance(mcp, dict) and mcp.get("toolName"):
+            entry["mcp_tool"] = mcp["toolName"]
+            if isinstance(mcp.get("toolArguments"), dict):
+                entry["mcp_arguments"] = mcp["toolArguments"]
         if item.get("error"):
             entry["error"] = item["error"]
         activity.append(entry)
@@ -497,6 +514,11 @@ def _activity_label(item: dict[str, Any]) -> str:
 
 def _activity_detail(item: dict[str, Any]) -> str | None:
     parts = []
+    mcp = item.get("mcpServerArguments")
+    if isinstance(mcp, dict) and mcp.get("toolName"):
+        arguments = mcp.get("toolArguments")
+        parts.append(f"tool MCP {mcp['toolName']}"
+                     + (f" {_short(json.dumps(arguments, ensure_ascii=False), 160)}" if arguments else ""))
     if item.get("count") is not None:
         parts.append(f"{item['count']} risultati")
     if item.get("elapsedMs") is not None:
@@ -586,6 +608,8 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
         response.encoding = "utf-8"
         completed = None
         raw_activity: list[dict[str, Any]] = []
+        activity_started: dict[str | int, int] = {}
+        activity_timings: dict[str | int, dict[str, Any]] = {}
         for name, data in read_sse(response.iter_lines(chunk_size=1, decode_unicode=True)):
             if name == "retrieval.started":
                 yield log_event(started, "retrieval", "Retrieval avviato da Foundry IQ", " · ".join(
@@ -596,6 +620,20 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
             elif name in ("activity.started", "activity.completed"):
                 activity = summarize_activity({"activity": [data]})[0]
                 activity["status"] = "in_progress" if name.endswith("started") else "completed"
+                activity_id = activity.get("id")
+                if type(activity_id) in (str, int) and activity_id != "":
+                    now_ms = round((time.perf_counter() - started) * 1000)
+                    if name.endswith("started"):
+                        activity["started_ms"] = activity_started.setdefault(activity_id, now_ms)
+                    else:
+                        activity["completed_ms"] = now_ms
+                        if activity_id in activity_started:
+                            activity["started_ms"] = activity_started[activity_id]
+                            activity["duration_ms"] = now_ms - activity["started_ms"]
+                    activity_timings[activity_id] = {
+                        key: activity[key] for key in ("status", "started_ms", "completed_ms", "duration_ms")
+                        if key in activity
+                    }
                 yield sse_event("activity", activity)
                 if name.endswith("started"):
                     yield log_event(started, "retrieval", f"Avviata: {_activity_label(data)}")
@@ -624,6 +662,10 @@ def stream_chat(body: ChatRequest, kb: dict[str, Any], user_token: str | None, s
             raise RuntimeError("Stream retrieve interrotto prima del completamento.")
         response.close()
         activity = summarize_activity(completed)
+        for item in activity:
+            activity_id = item.get("id")
+            if type(activity_id) in (str, int) and activity_id in activity_timings:
+                item.update(activity_timings[activity_id])
         result_data.update(
             references=summarize_references(completed), sources=summarize_sources(activity),
             activity=activity, retrieval_usage=retrieval_usage(activity),
@@ -715,7 +757,7 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
         yield sse_event("status", {"stage": "Esecuzione agente e tool"})
         yield log_event(started, "agent", f"Richiesta inviata all'agente {body.agent}", "identità del progetto, nessun token utente")
         tool_numbers: dict[str, int] = {}
-        tool_started: dict[str, int] = {}
+        tool_started: dict[str | int, int] = {}
         arguments: dict[str, str] = {}
         with agents_client().responses.create(
             input=[{"role": m.role, "content": m.content} for m in body.messages],
@@ -727,6 +769,8 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                         yield log_event(started, "generation", "Primo token della risposta")
                     text_emitted = text_emitted or bool(event.delta)
                     yield sse_event("delta", {"text": event.delta})
+                elif event.type == "response.output_text.done":
+                    yield log_event(started, "generation", "Testo della risposta terminato")
                 elif event.type == "response.created":
                     model = _as_dict(getattr(event, "response", None)).get("model")
                     yield log_event(started, "agent", "Esecuzione avviata dal servizio", f"modello: {model}" if model else None)
@@ -739,10 +783,15 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                         tool_numbers.setdefault(key, len(tool_numbers) + 1)
                         tool = _tool_event(item, arguments.get(key))
                         now_ms = round((time.perf_counter() - started) * 1000)
-                        tool["started_ms"] = tool_started.setdefault(key, now_ms)
-                        if done:
-                            tool["completed_ms"] = now_ms
-                            tool["duration_ms"] = now_ms - tool["started_ms"]
+                        tool_id = item.get("id")
+                        if type(tool_id) in (str, int) and tool_id != "":
+                            if not done:
+                                tool["started_ms"] = tool_started.setdefault(tool_id, now_ms)
+                            else:
+                                tool["completed_ms"] = now_ms
+                                if tool_id in tool_started:
+                                    tool["started_ms"] = tool_started[tool_id]
+                                    tool["duration_ms"] = now_ms - tool["started_ms"]
                         yield sse_event("tool", tool)
                         label = f"{tool['name']}" + (f" ({tool['server']})" if tool["server"] else "")
                         if not done:
@@ -771,8 +820,9 @@ def stream_agent(body: AgentChatRequest, started: float) -> Iterator[str]:
                         summary = " ".join(str(_as_dict(s).get("text") or "") for s in item.get("summary") or []).strip()
                         yield log_event(started, "agent", "Ragionamento completato" if done else "Ragionamento del modello",
                                         _short(summary, 400) if done else None)
-                    elif kind == "message" and not done:
-                        yield log_event(started, "generation", "Scrittura della risposta")
+                    elif kind == "message":
+                        yield log_event(started, "generation",
+                                        "Scrittura della risposta terminata" if done else "Scrittura della risposta")
                     elif kind.endswith("_output") and done:
                         yield log_event(started, "tool", f"Risultato ricevuto: {kind}", _tool_result_detail(item))
                 elif event.type in ("response.mcp_call_arguments.done", "response.function_call_arguments.done"):

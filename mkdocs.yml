@@ -15,6 +15,7 @@ nav:
   - Agenti Foundry: agents/README.md
   - Chat web app: webapp-chat/README.md
   - Notebook deploy e demo: notebooks/README.md
+  - Demo HTTP: http/README.md
   - Demo live e video offline: docs/demo-guide.md
   - Guida SharePoint: data/sharepoint/foundry-iq-sharepoint-remote-knowledge-source.md
   - Contribuire: CONTRIBUTING.md

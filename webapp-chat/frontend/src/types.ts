@@ -50,6 +50,10 @@ export interface Reference {
   knowledge_source_type?: string | null;
   tool_call?: number | null;
   score?: number | null;
+  mcp_tool?: string | null;
+  mcp_arguments?: Record<string, unknown> | null;
+  elapsed_ms?: number | null;
+  result_count?: number | null;
 }
 export interface CitationSpan {
   start: number;
@@ -83,6 +87,9 @@ export interface Activity {
   outputTokens?: number;
   startedAt?: string;
   completedAt?: string;
+  started_ms?: number;
+  completed_ms?: number;
+  duration_ms?: number;
   knowledgeSourceName?: string;
   type?: string;
   query?: string;
@@ -160,6 +167,7 @@ export interface TracePart {
   tool_type?: string;
   error?: string;
   started_ms?: number;
+  completed_ms?: number;
   duration_ms?: number;
   sources?: TraceSource[];
   header?: string;

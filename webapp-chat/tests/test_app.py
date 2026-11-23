@@ -5,6 +5,7 @@ import re
 import sys
 import time
 from collections import UserDict
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -218,6 +219,7 @@ def test_stream_chat_forwards_acl_and_separates_retrieval_and_model_usage(chat_a
         ("retrieval.started", {"requestId": "req-1", "outputMode": "extractiveData", "reasoningEffort": "low"}),
         ("activity.started", {"id": 0, "type": "azureBlob", "knowledgeSourceName": "acl-docs-ks"}),
         ("activity.completed", payload["activity"][0]),
+        ("activity.completed", payload["activity"][1]),
         ("references.completed", payload["references"]),
         ("response.completed", {"statusCode": 206, "response": payload}),
     ])
@@ -248,6 +250,13 @@ def test_stream_chat_forwards_acl_and_separates_retrieval_and_model_usage(chat_a
     assert events[-1][1]["answer"] == "Risposta progressiva"
     assert events[-1][1]["retrieval_usage"]["total_tokens"] == 13
     assert events[-1][1]["usage"]["total_tokens"] == 24
+    activities = [data for name, data in events if name == "activity"]
+    started, completed, without_start = activities
+    assert completed["started_ms"] == started["started_ms"]
+    assert completed["duration_ms"] == completed["completed_ms"] - started["started_ms"] >= 0
+    assert events[-1][1]["activity"][0]["duration_ms"] == completed["duration_ms"]
+    assert "started_ms" not in without_start and "duration_ms" not in without_start
+    assert "duration_ms" not in events[-1][1]["activity"][1]
     assert chat_app.calls[0]["headers"]["x-ms-query-source-authorization"] == headers["x-ms-token-aad-access-token"]
     assert chat_app.calls[0]["headers"]["Accept"] == "text/event-stream"
     assert chat_app.calls[0]["stream"] is True
@@ -266,6 +275,33 @@ def test_stream_chat_forwards_acl_and_separates_retrieval_and_model_usage(chat_a
     assert titles.index("Primo token della risposta") > titles.index("Retrieval completato")
     assert titles[-1] == "Risposta completata"
     assert all(type(data["at_ms"]) is int for data in logs)
+
+
+def test_stream_chat_keeps_overlapping_activity_intervals_separate(chat_app, monkeypatch):
+    ticks = count(100_000)
+    monkeypatch.setattr(chat_app, "time", SimpleNamespace(perf_counter=lambda: next(ticks) / 1000, time=time.time))
+    payload = kb_response([])
+    payload["activity"] = [
+        {"id": 0, "type": "azureBlob", "knowledgeSourceName": "manuali"},
+        {"id": 1, "type": "web", "knowledgeSourceName": "web"},
+    ]
+    response = StreamResponse([
+        ("activity.started", payload["activity"][0]),
+        ("activity.started", payload["activity"][1]),
+        ("activity.completed", payload["activity"][0]),
+        ("activity.completed", payload["activity"][1]),
+        ("response.completed", {"response": payload}),
+    ])
+    monkeypatch.setattr(chat_app.requests, "post", lambda *args, **kwargs: response)
+    result = signed_in_client(chat_app).post("/api/chat", json={
+        "knowledge_base": "acl", "messages": [{"role": "user", "content": "pompa?"}], "use_acl": False, "stream": True,
+    })
+    assert result.status_code == 200, result.text
+    events = list(chat_app.read_sse(result.text.splitlines()))
+    first, second = events[-1][1]["activity"]
+    assert first["started_ms"] < second["started_ms"] < first["completed_ms"] < second["completed_ms"]
+    assert first["duration_ms"] == first["completed_ms"] - first["started_ms"]
+    assert second["duration_ms"] == second["completed_ms"] - second["started_ms"]
 
 
 @pytest.mark.parametrize("events", [
@@ -291,6 +327,7 @@ def test_stream_agent_transmits_tool_and_text_before_final_result(chat_app, monk
     events = [
         SimpleNamespace(type="response.output_item.added", item={"id": "tool-1", "type": "mcp_call", "name": "knowledge_base_retrieve", "status": "in_progress"}),
         SimpleNamespace(type="response.output_text.delta", delta="Risposta agente"),
+        SimpleNamespace(type="response.output_text.done"),
         SimpleNamespace(type="response.completed", response=response),
     ]
     monkeypatch.setattr(chat_app, "agents_client", lambda: SimpleNamespace(
@@ -307,6 +344,7 @@ def test_stream_agent_transmits_tool_and_text_before_final_result(chat_app, monk
     assert titles[0].startswith("Richiesta inviata all'agente")
     assert "Chiamata tool avviata: knowledge_base_retrieve" in titles
     assert "Primo token della risposta" in titles
+    assert "Testo della risposta terminato" in titles
     assert titles[-1] == "Risposta completata"
 
 
@@ -342,6 +380,27 @@ def test_stream_agent_streams_tool_arguments_references_and_citations(chat_app, 
     args_log = next(data for name, data in output_events if name == "log" and data["title"] == "Argomenti inviati al tool")
     assert args_log["private"] is True
     assert any(name == "log" and data["title"] == "Riferimenti Foundry IQ ricevuti: 1" for name, data in output_events)
+
+
+@pytest.mark.parametrize("other_started_id", [None, 1])
+def test_stream_agent_does_not_invent_tool_start_when_only_completion_arrives(chat_app, monkeypatch, other_started_id):
+    monkeypatch.setattr(chat_app, "PROJECT_ENDPOINT", "https://project.example")
+    tool = {"id": "1", "type": "mcp_call", "name": "lookup", "status": "completed"}
+    events = ([SimpleNamespace(type="response.output_item.added", item={**tool, "id": other_started_id})]
+              if other_started_id is not None else []) + [
+        SimpleNamespace(type="response.output_item.done", item=tool),
+        SimpleNamespace(type="response.completed", response={"output_text": "ok", "output": [tool]}),
+    ]
+    monkeypatch.setattr(chat_app, "agents_client", lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=lambda **kwargs: ModelStream(events)),
+    ))
+    result = signed_in_client(chat_app).post("/api/agent-chat", json={
+        "agent": "wpc-technician-assistant", "messages": [{"role": "user", "content": "pompa?"}], "stream": True,
+    })
+    tool_event = [data for name, data in chat_app.read_sse(result.text.splitlines()) if name == "tool"][-1]
+    assert "completed_ms" in tool_event
+    assert "started_ms" not in tool_event
+    assert "duration_ms" not in tool_event
 
 
 @pytest.mark.parametrize(("agent", "message", "text_emitted", "retry_fails", "retries"), [
@@ -496,6 +555,34 @@ def test_chat_correlates_references_with_source_activity(chat_app, monkeypatch):
     assert data["references"][2]["knowledge_source_type"] is None
     assert data["activity"][0]["id"] == 0
     assert [source["name"] for source in data["sources"]] == ["manuali-ks", "ricambi-ks"]
+
+
+def test_mcp_references_include_tool_call_details(chat_app, monkeypatch):
+    payload = {
+        "response": [{"role": "assistant", "content": [{"type": "text", "text": "contenuto"}]}],
+        "activity": [{
+            "id": 3, "type": "mcpServer", "knowledgeSourceName": "ricambi-magazzino-ks", "count": 1, "elapsedMs": 158,
+            "mcpServerArguments": {"toolName": "get_part_details", "toolArguments": {"part_number": "GRT-002"}},
+        }],
+        "references": [
+            {"id": "0", "type": "mcpServer", "activitySource": 3, "toolName": "get_part_details",
+             "title": "ricambi-magazzino-ks get_part_details 1", "sourceData": None},
+            {"id": "1", "type": "searchIndex", "activitySource": 99, "docKey": "manuale"},
+        ],
+    }
+    monkeypatch.setattr(chat_app.requests, "post", lambda *args, **kwargs: FakeResponse(200, payload))
+    data = signed_in_client(chat_app).post(
+        "/api/chat",
+        json={"knowledge_base": "demo", "messages": [{"role": "user", "content": "GRT-002?"}], "use_acl": False},
+    ).json()
+
+    mcp_ref, other = data["references"]
+    assert mcp_ref["mcp_tool"] == "get_part_details"
+    assert mcp_ref["mcp_arguments"] == {"part_number": "GRT-002"}
+    assert mcp_ref["elapsed_ms"] == 158
+    assert mcp_ref["result_count"] == 1
+    assert "mcp_tool" not in other
+    assert data["activity"][0]["mcp_tool"] == "get_part_details"
 
 
 def test_messages_fall_back_to_intents_on_400(chat_app, monkeypatch):

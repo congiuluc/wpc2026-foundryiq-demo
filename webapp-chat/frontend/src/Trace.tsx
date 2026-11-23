@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, Header, Profile } from "./Layout";
 import { FolderIcon, LockIcon, SparkIcon } from "./UiIcons";
 import { parseTrace } from "./trace/traceParser";
+import { buildWaterfall } from "./trace/waterfall";
 import { errorMessage, isRecord } from "./types";
 import type { TraceSnapshot } from "./trace/currentTrace";
+import type { WaterfallRow } from "./trace/waterfall";
 import type { ChatConfig, ParsedTrace, TracePart, TraceSource } from "./types";
 import type { ReactNode } from "react";
 
@@ -90,6 +92,62 @@ function Part({ part, term, raw, command }: { part: TracePart; term: string; raw
   return <div className="part"><span className="type">{part.type}</span><Json value={part.raw} /></div>;
 }
 
+function duration(ms: number) {
+  return ms >= 1000
+    ? `${(ms / 1000).toLocaleString("it-IT", { maximumFractionDigits: 2 })} s`
+    : `${ms.toLocaleString("it-IT", { maximumFractionDigits: 2 })} ms`;
+}
+function timingLabel(row: WaterfallRow) {
+  if (row.timing === "invalid") return "Tempi incoerenti";
+  if (row.durationMs !== undefined) {
+    const qualifier = row.timing === "events" ? " tra eventi" : row.timing === "observed" ? " osservati" : row.timing === "service" ? " (servizio)" : "";
+    return `${duration(row.durationMs)}${qualifier}${row.startMs === undefined ? " · inizio non disponibile" : ""}`;
+  }
+  if (row.startMs !== undefined) return "Durata non disponibile";
+  if (row.endMs !== undefined) return "Inizio non disponibile";
+  return "Tempi non disponibili";
+}
+function statusLabel(status?: string) {
+  if (!status) return "";
+  if (["completed", "succeeded"].includes(status)) return "Completata";
+  if (["failed", "error", "incomplete", "cancelled", "canceled"].includes(status)) return "Errore";
+  if (["in_progress", "queued", "running"].includes(status)) return "In corso all'ultimo evento";
+  return `Stato: ${status}`;
+}
+const waterfallKinds: Record<WaterfallRow["kind"], string> = {
+  request: "Richiesta", tool: "Tool", retrieval: "Fase", activity: "Attività", generation: "Fase",
+};
+function TraceWaterfall({ message }: { message: ParsedTrace["messages"][number] }) {
+  const graph = buildWaterfall(message);
+  if (!graph) return null;
+  return <section className="trace-waterfall" aria-label="Grafico temporale della risposta">
+    <h3>Grafico temporale</h3>
+    <p className="meta">Tempi osservati dalla chat. Le fasi mostrano l'intervallo tra eventi, non gli span interni del modello o di Foundry.</p>
+    <div className="waterfall-scroll" role="region" aria-label="Grafico temporale scorrevole" tabIndex={0}>
+      <div className="waterfall-chart">
+        <div className="waterfall-axis" aria-hidden="true"><span>0 ms</span><span>{duration(graph.extentMs)}</span></div>
+        <ol className="waterfall-rows">{graph.rows.map((row, index) => {
+          const point = row.startMs ?? row.endMs;
+          const bar = row.startMs !== undefined && row.endMs !== undefined && row.endMs > row.startMs && row.timing !== "invalid"
+            ? { left: `${row.startMs / graph.extentMs * 100}%`, width: `${(row.endMs - row.startMs) / graph.extentMs * 100}%` }
+            : null;
+          const status = statusLabel(row.status);
+          return <li className={`waterfall-row waterfall-${row.kind}`} data-kind={row.kind} key={index}>
+            <div className="waterfall-label"><span className="waterfall-type">{waterfallKinds[row.kind]}</span><strong>{row.label}</strong>
+              {status && <span className={`waterfall-state${status === "Errore" ? " is-error" : ""}`}>{status}</span>}</div>
+            <div className="waterfall-track" aria-hidden="true">{bar
+              ? <span className="waterfall-bar" style={bar} />
+              : point !== undefined && row.timing !== "invalid" && <span className="waterfall-point" style={{ left: `${point / graph.extentMs * 100}%` }} />}</div>
+            <div className="waterfall-time"><strong>{timingLabel(row)}</strong>
+              {row.startMs !== undefined && <span>avvio +{duration(row.startMs)}</span>}
+              {row.startMs === undefined && row.endMs !== undefined && <span>fine +{duration(row.endMs)}</span>}</div>
+          </li>;
+        })}</ol>
+      </div>
+    </div>
+  </section>;
+}
+
 function TraceResults({ trace }: { trace: ParsedTrace }) {
   const [mode, setMode] = useState<"timeline" | "documents">("timeline"), [filter, setFilter] = useState(""), [raw, setRaw] = useState(false), [command, setCommand] = useState({ id: 0, open: false });
   const view = useRef<HTMLDivElement | null>(null);
@@ -104,7 +162,7 @@ function TraceResults({ trace }: { trace: ParsedTrace }) {
     <fieldset aria-label="Vista della traccia"><legend>Vista</legend><div className="segmented">{([["timeline", "Cronologia"], ["documents", "Per documento"]] as const).map(([value, label]) => <label key={value}><input type="radio" name="view" value={value} checked={mode === value} onChange={() => setMode(value)} /> {label}</label>)}</div></fieldset>
     <label>Filtro <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="testo nelle fonti…" /></label><label className="check"><input type="checkbox" checked={raw} onChange={(e) => setRaw(e.target.checked)} /> Testo grezzo</label><span className="spacer" />
     <button type="button" className="secondary" onClick={() => setCommand((previous) => ({ id: previous.id + 1, open: [...(view.current?.querySelectorAll<HTMLDetailsElement>("details.source") || [])].some((item) => !item.open) }))}>{command.open ? "Comprimi tutto" : "Espandi tutto"}</button></section>
-    <div id="trace-view" ref={view}>{mode === "timeline" ? trace.messages.map((message, i) => <article key={i} className={`trace-message role-${message.role}`}><div className="message-head"><span className="badge role">{message.role}</span>{message.name && <span className="meta">{message.name}</span>}<span className="meta">#{message.position + 1}</span></div>{message.parts.map((part, j) => <Part key={j} part={part} term={term} raw={raw} command={command} />)}</article>)
+    <div id="trace-view" ref={view}>{mode === "timeline" ? trace.messages.map((message, i) => <article key={i} className={`trace-message role-${message.role}`}><div className="message-head"><span className="badge role">{message.role}</span>{message.name && <span className="meta">{message.name}</span>}<span className="meta">#{message.position + 1}</span></div><TraceWaterfall message={message} />{message.parts.map((part, j) => <Part key={j} part={part} term={term} raw={raw} command={command} />)}</article>)
       : !groups.size ? <p className="meta">Nessuna fonte corrisponde al filtro.</p> : [...groups.values()].sort((a, b) => b.sources.length - a.sources.length).map((group, i) => <article className="trace-message" key={i}><div className="message-head"><strong><Highlight text={group.document} term={term} /></strong><span className="meta"> · {group.sources.length} chunk</span></div>{group.url && <div className="meta"><code>{group.url}</code></div>}{group.sources.sort((a, b) => (a.page ?? 0) - (b.page ?? 0)).map((source, j) => <Source key={j} source={source} term={term} raw={raw} showDocument={false} command={command} />)}</article>)}</div></>;
 }
 

@@ -1,0 +1,68 @@
+# VS Code REST Client (humao.rest-client). Configurazione: README.md.
+@projectEndpoint = {{$dotenv FOUNDRYIQ_DEMO_PROJECT_ENDPOINT}}
+@foundryToken = {{$dotenv FOUNDRY_TOKEN}}
+@question = Devo cambiare le membrane filtranti della Graphene Vapor Reclaim Tank: ogni quanto va fatto e quante GRT-002 abbiamo a magazzino? Cita manuale e giacenze.
+
+### RAG classico rapido: tool indipendenti
+# @name ragRapido
+POST {{projectEndpoint}}/openai/v1/responses
+Authorization: Bearer {{foundryToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "agent_reference": {
+    "type": "agent_reference",
+    "name": "wpc-rag-classico-rapido"
+  },
+  "input": [{"role": "user", "content": "{{question}}"}],
+  "stream": false
+}
+
+### RAG classico accurato: stessi tipi di sorgenti, configurazione diversa
+# @name ragAccurato
+POST {{projectEndpoint}}/openai/v1/responses
+Authorization: Bearer {{foundryToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "agent_reference": {
+    "type": "agent_reference",
+    "name": "wpc-rag-classico-accurato"
+  },
+  "input": [{"role": "user", "content": "{{question}}"}],
+  "stream": false
+}
+
+### Foundry IQ: un solo tool knowledge base
+# @name foundryIq
+POST {{projectEndpoint}}/openai/v1/responses
+Authorization: Bearer {{foundryToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "agent_reference": {
+    "type": "agent_reference",
+    "name": "wpc-technician-assistant"
+  },
+  "input": [{"role": "user", "content": "{{question}}"}],
+  "stream": false
+}
+
+### Magazzino: MCP diretto, senza knowledge base
+# @name magazzino
+POST {{projectEndpoint}}/openai/v1/responses
+Authorization: Bearer {{foundryToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "agent_reference": {
+    "type": "agent_reference",
+    "name": "wpc-magazzino-assistant"
+  },
+  "input": [{"role": "user", "content": "Quante membrane GRT-002 abbiamo a magazzino?"}],
+  "stream": false
+}

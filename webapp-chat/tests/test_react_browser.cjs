@@ -38,7 +38,8 @@ function reply(req, res, body) {
     const response = agent
       ? {
           agent: body.agent, answer: agentAnswer,
-          tool_calls: [{ type: "mcp_call", name: "tool-demo", server: "mcp", status: "completed" }],
+          tool_calls: [{ id: "tool-1", type: "mcp_call", name: "tool-demo", server: "mcp", status: "completed",
+            started_ms: 150, completed_ms: 450, duration_ms: 300 }],
           citations: [{ title: `Guida web ${body.agent}`, url: `https://example.test/${body.agent}`, type: "url_citation" }],
           citation_spans: [{ start: agentAnswer.indexOf("guida"), end: agentAnswer.indexOf("guida") + 5, citation_index: 0 }],
           references: [
@@ -47,23 +48,25 @@ function reply(req, res, body) {
           ],
           elapsed_ms: 1500, usage: { total_tokens: 40 }, execution: { identity: "Identità del progetto" },
         }
-      : { answer: `Risposta ${body.use_acl ? "ACL" : "pubblica"} [0]`, references: [{ id: 0, title: body.use_acl ? "Manuale ACL" : "Manuale pubblico", url: "https://example.test/manual" }], activity: [], sources: [{ name: "Manuali", type: "azureBlob", queries: 1, results: 1 }], elapsed_ms: 120, knowledge_base: body.knowledge_base, execution: { identity: "Credenziale Azure locale", acl_requested: body.use_acl, user_token_forwarded: body.use_acl, synthesis_performed: true, chat_deployment: "test" } };
+      : { answer: `Risposta ${body.use_acl ? "ACL" : "pubblica"} [0]`, references: [{ id: 0, title: body.use_acl ? "Manuale ACL" : "Manuale pubblico", url: "https://example.test/manual" }], activity: [{ id: 1, type: "modelQueryPlanning", status: "completed", started_ms: 20, completed_ms: 80, duration_ms: 60 }], sources: [{ name: "Manuali", type: "azureBlob", queries: 1, results: 1 }], elapsed_ms: 120, knowledge_base: body.knowledge_base, execution: { identity: "Credenziale Azure locale", acl_requested: body.use_acl, user_token_forwarded: body.use_acl, synthesis_performed: true, chat_deployment: "test" } };
     const delay = question.startsWith("Attendi") ? 1600 : 80;
-    if (["Streaming live", "Streaming errore", "Streaming interrotto"].includes(question)) {
+    if (["Streaming live", "Streaming errore", "Streaming interrotto", "Tool solo nello stream"].includes(question)) {
       assert.equal(body.stream, true);
       res.setHeader("Content-Type", "text/event-stream");
       const event = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
       event("status", { stage: "Retrieval Foundry IQ", result: { answer: "" } });
       event(agent ? "tool" : "activity", agent
-        ? { id: "tool-1", type: "mcp_call", name: "tool-demo", status: "in_progress" }
-        : { id: 1, type: "modelQueryPlanning", status: "in_progress" });
+        ? { id: "tool-1", type: "mcp_call", name: "tool-demo", status: "in_progress", started_ms: 150 }
+        : { id: 1, type: "modelQueryPlanning", status: "in_progress", started_ms: 20 });
+      event("log", { at_ms: agent ? 150 : 20, phase: agent ? "tool" : "retrieval", title: "Attività avviata" });
       event("delta", { text: response.answer.slice(0, 8) });
-      if (question !== "Streaming live") {
+      if (question === "Streaming errore" || question === "Streaming interrotto") {
         if (question === "Streaming errore") event("error", { message: "Errore upstream nello stream" });
         return res.end();
       }
       return setTimeout(() => {
-        event("completed", response);
+        event(agent ? "tool" : "activity", agent ? response.tool_calls[0] : response.activity[0]);
+        event("completed", agent && question === "Tool solo nello stream" ? { ...response, tool_calls: [] } : response);
         res.end();
       }, 1200);
     }
@@ -193,9 +196,24 @@ test("React chat, current and manual trace, and presentation controls", { timeou
       assert.equal(await evaluate(page, "document.querySelector('.answer .text').textContent.trim()"), "Risposta");
       await openTrace();
       assert.equal(await evaluate(page, "document.querySelector('.trace-dialog #trace-view').textContent.includes('Risposta')"), true);
+      assert.equal(await evaluate(page, "document.querySelector('.trace-waterfall')?.textContent.includes('osservati')"), true);
       await closeTrace();
       await wait(page, "!document.querySelector('.elapsed')");
       assert.equal(await evaluate(page, "document.querySelectorAll('.answer').length"), mode === "noacl" ? 1 : 2);
+      if (mode === "agents") {
+        await openTrace();
+        const bars = await evaluate(page, `Array.from(document.querySelectorAll('.waterfall-tool')).map(row => {
+          const track = row.querySelector('.waterfall-track').getBoundingClientRect();
+          const bar = row.querySelector('.waterfall-bar').getBoundingClientRect();
+          return { left: (bar.left - track.left) / track.width, width: bar.width / track.width, text: row.textContent };
+        })`);
+        assert.equal(bars.length, 2);
+        for (const bar of bars) {
+          assert.ok(Math.abs(bar.left - 0.1) < 0.01 && Math.abs(bar.width - 0.2) < 0.01, JSON.stringify(bar));
+          assert.match(bar.text, /300 ms/);
+        }
+        await closeTrace();
+      }
       await evaluate(page, "document.querySelector('#reset').click()");
     }
     await evaluate(page, "document.querySelector('input[value=noacl]').click()");
@@ -268,6 +286,16 @@ test("React chat, current and manual trace, and presentation controls", { timeou
     await openTrace();
     assert.equal(await evaluate(page, "(() => { const text = document.querySelector('.trace-dialog #trace-view').textContent; return text.includes('Risposta one') && text.includes('Risposta two') && text.includes('tool-demo'); })()"), true);
     await closeTrace();
+    await setValue(page, "#question", "Tool solo nello stream");
+    await evaluate(page, "document.querySelector('#form').requestSubmit()");
+    await wait(page, "!document.querySelector('.elapsed') && document.querySelectorAll('.answer').length === 4");
+    await openTrace();
+    assert.equal(await evaluate(page, `(() => {
+      const users = [...document.querySelectorAll('.trace-dialog .trace-message.role-user')]
+        .filter(x => x.textContent.includes('Tool solo nello stream'));
+      return users.length === 2 && users.every(x => x.nextElementSibling.querySelector('.waterfall-tool .waterfall-bar'));
+    })()`), true);
+    await closeTrace();
     await setValue(page, "#question", "Attendi live");
     await evaluate(page, "document.querySelector('#form').requestSubmit()");
     await wait(page, "!!document.querySelector('.elapsed')");
@@ -315,9 +343,17 @@ test("React chat, current and manual trace, and presentation controls", { timeou
     await evaluate(trace, "window.dispatchEvent(new MessageEvent('message', { origin: location.origin, source: window.opener, data: { type: 'wpc-current-trace', trace: { messages: [{ role: 'assistant', parts: [{ type: 'text', text: 'Da ignorare' }] }] } } }))");
     await sleep(100);
     assert.equal(await evaluate(trace, "document.querySelector('#trace-text').value === '' && !document.querySelector('#trace-view')"), true);
-    await setValue(trace, "#trace-text", JSON.stringify({ role: "assistant", parts: [{ type: "tool_call_response", response: '【1:0†source】{"title":"Documento","snippet":"testo ricercabile"}' }] }));
+    await setValue(trace, "#trace-text", JSON.stringify({ role: "assistant", parts: [
+      { type: "response_metadata", elapsed_ms: 1000 },
+      { type: "tool_call", name: "search", started_ms: 200, duration_ms: 300 },
+      { type: "tool_call_response", response: '【1:0†source】{"title":"Documento","snippet":"testo ricercabile"}' },
+    ] }));
     await evaluate(trace, "[...document.querySelectorAll('button')].find(x => x.textContent === 'Visualizza').click()");
     await wait(trace, "document.querySelector('#trace-view')?.textContent.includes('Documento')");
+    assert.deepEqual(await evaluate(trace, `(() => {
+      const bar = document.querySelector('.waterfall-tool .waterfall-bar');
+      return [parseFloat(bar.style.left), parseFloat(bar.style.width)];
+    })()`), [20, 30]);
     await evaluate(trace, "document.querySelector('details.source summary').click()");
     await wait(trace, "document.querySelector('details.source').open");
     await evaluate(trace, "[...document.querySelectorAll('button')].find(x => x.textContent === 'Espandi tutto').click()");

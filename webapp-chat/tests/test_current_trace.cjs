@@ -71,6 +71,70 @@ test("trace includes queries, tool arguments and timings with credentials redact
   assert.equal(parsed.duration_ms, 210);
 });
 
+test("waterfall preserves observed offsets, overlapping tools and retrieval activities", async () => {
+  const { buildWaterfall } = await server.ssrLoadModule(path.join(frontend, "src", "trace", "waterfall.ts"));
+  const trace = createCollector();
+  const id = trace.begin({ question: "Pompa?", label: "Agente", mode: "agents" });
+  trace.finish(id, {
+    answer: "ok", elapsed_ms: 1000,
+    timeline: [
+      { at_ms: 10, phase: "agent", title: "Richiesta inviata" },
+      { at_ms: 400, phase: "generation", title: "Scrittura della risposta" },
+      { at_ms: 700, phase: "generation", title: "Generazione terminata" },
+    ],
+    activity: [{ id: 1, type: "azureBlob", knowledgeSourceName: "Manuali",
+      started_ms: 80, completed_ms: 180, duration_ms: 100 }],
+    tool_calls: [
+      { id: "a", type: "mcp_call", name: "retrieve", status: "completed", started_ms: 40, completed_ms: 250, duration_ms: 210 },
+      { id: "b", type: "mcp_call", name: "stock", status: "completed", started_ms: 100, completed_ms: 400, duration_ms: 300 },
+    ],
+  });
+  const graph = buildWaterfall(parseTrace(JSON.stringify(trace.snapshot())).messages[1]);
+  assert.equal(graph.extentMs, 1000);
+  assert.equal(graph.rows[0].kind, "request");
+  assert.deepEqual([graph.rows[0].startMs, graph.rows[0].endMs, graph.rows[0].durationMs], [0, 1000, 1000]);
+  const retrieve = graph.rows.find((row) => row.kind === "tool" && row.label.includes("retrieve"));
+  const stock = graph.rows.find((row) => row.kind === "tool" && row.label.includes("stock"));
+  assert.deepEqual([retrieve.startMs, retrieve.endMs, retrieve.durationMs], [40, 250, 210]);
+  assert.deepEqual([stock.startMs, stock.endMs, stock.durationMs], [100, 400, 300]);
+  const activity = graph.rows.find((row) => row.kind === "activity");
+  assert.deepEqual([activity.startMs, activity.endMs, activity.durationMs], [80, 180, 100]);
+  const generation = graph.rows.find((row) => row.kind === "generation");
+  assert.deepEqual([generation.startMs, generation.endMs, generation.durationMs, generation.timing], [400, 700, 300, "events"]);
+});
+
+test("waterfall leaves incomplete or inconsistent timings unavailable", async () => {
+  const { buildWaterfall } = await server.ssrLoadModule(path.join(frontend, "src", "trace", "waterfall.ts"));
+  const trace = createCollector();
+  const id = trace.begin({ question: "Pompa?", label: "Agente", mode: "agents" });
+  trace.update(id, {
+    answer: "", timeline: [
+      { at_ms: 20, phase: "tool", title: "Chiamata tool avviata" },
+      { at_ms: 120, phase: "generation", title: "Primo token della risposta" },
+    ],
+    tool_calls: [
+      { id: "pending", type: "mcp_call", name: "pending", status: "in_progress", started_ms: 20 },
+      { id: "missing", type: "mcp_call", name: "missing", status: "completed", duration_ms: 15 },
+      { id: "invalid", type: "mcp_call", name: "invalid", status: "completed", started_ms: 90, completed_ms: 40, duration_ms: 50 },
+    ],
+  });
+  const graph = buildWaterfall(parseTrace(JSON.stringify(trace.snapshot())).messages[1]);
+  assert.equal(graph.rows[0].timing, "observed");
+  const pending = graph.rows.find((row) => row.label.includes("pending"));
+  assert.equal(pending.startMs, 20);
+  assert.equal(pending.endMs, undefined);
+  assert.equal(pending.durationMs, undefined);
+  const missing = graph.rows.find((row) => row.label.includes("missing"));
+  assert.equal(missing.startMs, undefined);
+  assert.equal(missing.durationMs, 15);
+  const invalid = graph.rows.find((row) => row.label.includes("invalid"));
+  assert.equal(invalid.timing, "invalid");
+  assert.equal(invalid.endMs, undefined);
+  const generation = graph.rows.find((row) => row.kind === "generation");
+  assert.equal(generation.startMs, 120);
+  assert.equal(generation.durationMs, undefined);
+});
+
 test("failed non-streaming retry keeps the fallback warning next to the error", () => {
   const trace = createCollector();
   const id = trace.begin({ question: "Ricambi?", label: "RAG accurato", mode: "agents" });
